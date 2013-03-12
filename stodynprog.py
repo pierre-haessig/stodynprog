@@ -201,10 +201,12 @@ class RectBivariateSplineBc(RectBivariateSpline):
     where spline evaluation works uses input broadcast
     and returns an output with a coherent shape.
     '''
+    #@profile
     def __call__(self, x, y):
         '''extended `ev` method, which supports array broadcasting
         '''
-        x,y = np.broadcast_arrays(x,y)
+        if x.shape != y.shape:
+            x,y = np.broadcast_arrays(x,y) # costs about 30µs/call
         # flatten the inputs after saving their shape:
         shape = x.shape
         x = np.ravel(x)
@@ -308,26 +310,31 @@ class DPSolver(object):
         
         # 2) Build the dicretization grid for each control:
         control_grids = []
+        control_dims = []
         for (u_min, u_max), step in zip(intervals, self.control_steps):
             width = u_max - u_min
-            npts = width / step # gives a float
+            n_interv = width / step # gives the number of intervals (float)
             
-            if npts < 0.1:
+            if n_interv < 0.1:
                 # step size is much (10x) thinner than the admissible width,
                 # only keep one control point at the interval center :
+                npts = 1
                 u_grid = np.array([(u_min+u_max)/2])
             else:
                 # ensure we take enough points so that the actual discretization step
                 # is smaller or equal than the `step` hint
-                npts = np.ceil(npts) + 1
+                npts = int(np.ceil(n_interv) + 1)
                 u_grid = np.linspace(u_min, u_max, npts)
             control_grids.append(u_grid)
+            control_dims.append(npts)
         # end for each control
-        return control_grids
+        return control_grids, tuple(control_dims)
     # end control_grids()
     
+    #@profile
     def solve_step(self, J_next):
-        '''solve one DP step the all state space grid
+        '''solve one DP step on the entire state space grid,
+        given and cost-to-go array `J_next` discretized over the state space grid
         '''
         t_start = datetime.now()
         # Iterator over the state grid:
@@ -336,31 +343,19 @@ class DPSolver(object):
         state_ind = itertools.product(*[range(d) for d in state_dims])
         
         # number of control variables
-        nb_control = len(sys.control)
+        nb_control = len(self.sys.control)
         
-        # Initialize the 
+        # Initialize the output arrays
         J_k = np.zeros(state_dims)
         u_k = np.zeros(state_dims + (nb_control,) )
         
         # Interpolating function of the cost-to-go
-        J_next = self.interp_on_state(J_next)
+        J_next_interp = self.interp_on_state(J_next)
         
         # Loop over the state grid
         print('starting state loop...', end='')
         for ind_x, x_k in itertools.izip(state_ind, state_grid):
-            # compute an allowed control grid
-            u_grids = self.control_grids(x_k)
-            # Iterate over the control grid
-            J_xk_opt = np.inf
-            u_xk_opt = None
-            for u_xk in itertools.product(*u_grids):
-                # TODO : vectorize this grid (at least one dimension)
-                # Compute the expected cost of control u_k:
-                J = self.estimate_cost(x_k, u_xk, J_next)
-                if J < J_xk_opt:
-                    J_xk_opt = J
-                    u_xk_opt = u_xk
-            
+            J_xk_opt, u_xk_opt = self.solve_state_point_vect(x_k, J_next_interp)
             # Save the optimal value:
             J_k[ind_x] = J_xk_opt
             u_k[ind_x] = u_xk_opt
@@ -375,23 +370,97 @@ class DPSolver(object):
         return (J_k, u_k)
     # end solve_step
     
-    def estimate_cost(self, x_k, u_k, J_next):
-        '''estimate cost J_k, the Expectation of g(x_k, u_k) + J_{k+1}(f(x_k, u_k, w_k))
-        for a given state x_k, a given control u_k and a cost-to-go J_{k+1}
+    #@profile
+    def solve_state_point_loop(self, x_k, J_next_interp):
+        '''find the optimal cost J_k and optimal control u_k
+        at a given state point `x_k`
+        
+        This is the *iterative* implentation:
+        The set of allowed controls is discretized their expected cost 
+        J(x_k, u_k) is computed one after another in a loop.
+        Best control and cost is memorized within the loop.
+        
+        Returns (J_xk_opt, u_xk_opt)
         '''
-        # Perturbation (for now only 1D):
+        # compute an allowed control grid (depends on the state)
+        u_grids, control_dims = self.control_grids(x_k)
+        nb_control = len(u_grids)
+        # Iterate over the control grid
+        J_xk_opt = np.inf
+        u_xk_opt = None
+        
+        # grab the 1D perturbation vector
         w_k = self.perturb_grids[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement an nD perturbation
         
-        args = x_k + u_k + (w_k,)
+        # Iterate over all possible controls:
+        for u_xk in itertools.product(*u_grids):
+            ### Compute the expected cost of control u_xk ###
+            args = x_k + u_xk + (w_k,)
+            # Compute a grid of next steps:
+            x_next = self.sys.dyn(*args)
+            # Compute a grid of costs:
+            J_k_grid = self.sys.cost(*args) # instant cost
+            J_k_grid += J_next_interp(*x_next) # add the cost-to-go
+            # Expected (weighted mean) cost:
+            J = np.inner(J_k_grid, w_proba)
+            
+            # Check optimality of the cost:
+            if J < J_xk_opt:
+                J_xk_opt = J
+                u_xk_opt = u_xk
+        # end for each control
+        
+        return (J_xk_opt, u_xk_opt)
+    # end solve_state_point_loop()
+    
+    #@profile
+    def solve_state_point_vect(self, x_k, J_next_interp):
+        '''find the optimal cost J_k and optimal control u_k
+        at a given state point `x_k`
+        
+        This is the *vectorized* implementation:
+        The set of allowed controls is discretized and their expected cost
+        J(x_k, u_k) is computed *all at once*.
+        Then, the best control and cost is found using `np.argmin`
+        
+        Returns (J_xk_opt, u_xk_opt)
+        '''
+        # Compute the allowed control grid (depends on the state)
+        u_grids, control_dims = self.control_grids(x_k)
+        nb_control = len(u_grids)
+        
+        # Reshape the control grids to enable broadcasted operations:
+        for i in range(nb_control):
+            # create a tuple of ones of length (nb_control + 1) with -1 at index i
+            # (+1 used for the perturbation)
+            shape = (1,)*i + (-1,) + (1,)*(nb_control-i)
+            # inplace reshape:
+            u_grids[i].shape = shape
+        
+        # grab the 1D perturbation vector
+        w_k = self.perturb_grids[0]
+        w_proba = self.perturb_proba[0]
+        # TODO : implement nD perturbation
+        
+        args = x_k + tuple(u_grids) + (w_k,)
         # Compute a grid of next steps:
         x_next = self.sys.dyn(*args)
         # Compute a grid of costs:
-        J_k_grid = sys.cost(*args) + J_next(*x_next)
+        g_k_grid = self.sys.cost(*args) # instant cost
+        J_k_grid = g_k_grid + J_next_interp(*x_next) # add the cost-to-go
         # Expected (weighted mean) cost:
-        J_k = np.inner(J_k_grid, w_proba)
-        return J_k
+        J = np.inner(J_k_grid, w_proba) # shape dim_control
+        assert J.shape == control_dims
+        
+        # Find the lowest cost in array J:
+        ind_opt = np.unravel_index(J.argmin(),control_dims)
+        
+        J_xk_opt = J[ind_opt]
+        u_xk_opt = [u_grids[i].flatten()[ind_opt[i]] for i in range(nb_control)]
+        return (J_xk_opt, u_xk_opt)
+    # end solve_state_point_vect()
 # end DPSolver
 
 
@@ -417,7 +486,7 @@ if __name__ == '__main__':
         returns (E(k+1), P_req(k+1))
         '''
         # 1) Stored energy evolution:
-        E_next = E + P_sto - a*abs(P_sto)
+        E_next = E + P_sto - a*abs(P_sto)# + 0*innov
         # 2) Storage request AR(1) model:
         P_req_next = phi*P_req + innov
         return (E_next, P_req_next)
