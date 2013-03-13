@@ -80,6 +80,7 @@ class SysDescription(object):
         # Dynamics and Cost functions (to be set separately)
         self._dyn = None
         self._cost = None
+        self._control_box = None
         self._terminal_cost = _zero_cost
         self._perturb_laws = None
     
@@ -160,7 +161,7 @@ class SysDescription(object):
                              '{:d} args instead of {:d}'.format(
                              len(self.state), len(cost_args)))
         self._terminal_cost = cost
-    
+
     @property
     def perturb_laws(self):
         '''distribution laws of perturbations `w_k`'''
@@ -175,8 +176,8 @@ class SysDescription(object):
                              .format(len(self.perturb)))
         self._perturb_laws = laws
     
-
     def print_summary(self):
+        '''summary information about the dynamical system'''
         print('System "{:s}"'.format(self.name))
         print('  state vector:   {:s} (dim {:d})'.format(', '.join(self.state),
                                                      len(self.state)) )
@@ -187,13 +188,16 @@ class SysDescription(object):
                                                              len(self.perturb)) )
         else:
             print('  no perturbation')
-    # end print_summary
+    # end print_summary()
+    
     def __repr__(self):
         return '<SysDescription "{:s}" at 0x{:x}>'.format(self.name, id(self))
-# end SysDescription
+    # end __repr__()
+# end SysDescription class
 
-
-
+################################################################################
+# Interpolation class
+# TODO : use a nicer n-dim method (like multilinear interpolation)
 from scipy.interpolate import RectBivariateSpline
 
 class RectBivariateSplineBc(RectBivariateSpline):
@@ -215,13 +219,21 @@ class RectBivariateSplineBc(RectBivariateSpline):
         z = self.ev(x,y)
         z = z.reshape(shape)
         return z
+    # end __call__()
+# end RectBivariateSplineBc class
 
+################################################################################
+# Stochastic Dynamic Programming class
 
 class DPSolver(object):
     def __init__(self, sys):
         '''Dynamic Programming solver based on Value Iteration
         '''
         self.sys = sys
+        # Initialization of discrete grids:
+        self.state_grid = [[0.] for s in self.sys.state]
+        self.perturb_grid = [[0.] for p in self.sys.perturb]
+        self.perturb_proba = [[1.] for p in self.sys.perturb]
         # steps for control discretization
         self.control_steps = (1.,)*len(self.sys.control)
     # end __init__()
@@ -229,12 +241,12 @@ class DPSolver(object):
     def discretize_perturb(self, *linspace_args):
         '''create a regular discrete grid for each perturbation variable
         
-        grids are stored in `self.perturb_grids` and can also be set manually
+        grids are stored in `self.perturb_grid` and can also be set manually
         corresponding probability weights are in `self.perturb_proba`
         '''
         assert len(linspace_args) == len(self.sys.perturb)*3
         
-        self.perturb_grids = []
+        self.perturb_grid = []
         self.perturb_proba = []
         for i in range(len(self.sys.perturb)):
             # discrete grid for perturbation `i`
@@ -243,47 +255,36 @@ class DPSolver(object):
             proba_wi = pdf_wi(grid_wi)
             proba_wi /= proba_wi.sum()
 
-            self.perturb_grids.append(grid_wi)
+            self.perturb_grid.append(grid_wi)
             self.perturb_proba.append(proba_wi)
             
-        
-        grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grids])
-        # Print a report on discretization:
-        print('Perturbation discretized on a {:s} points grid'.format(grid_size))
-        for i in range(len(self.sys.perturb)):
-            step = self.perturb_grids[i][1] - self.perturb_grids[i][0]
-            print('  Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
+        return self.perturb_grid, self.perturb_proba
     # end discretize_perturb()
     
     def discretize_state(self, *linspace_args):
         '''create a regular discrete grid for each state variable
         
-        grids are stored in `self.state_grids` and can also be set manually.
+        grids are stored in `self.state_grid` and can also be set manually.
         '''
         assert len(linspace_args) == len(self.sys.state)*3
         
-        self.state_grids = []
+        self.state_grid = []
         for i in range(len(self.sys.state)):
             # discrete grid for state `i`
             grid_xi = np.linspace(*linspace_args[i*3:i*3+3])
-            self.state_grids.append(grid_xi)
+            self.state_grid.append(grid_xi)
         
-        grid_size = 'x'.join([str(len(grid)) for grid in self.state_grids])
-        # Print a report on discretization:
-        print('State space discretized on a {:s} points grid'.format(grid_size))
-        for i in range(len(self.sys.state)):
-            step = self.state_grids[i][1] - self.state_grids[i][0]
-            print('  Δ{:s} = {:g}'.format(self.sys.state[i], step))
+        return self.state_grid
     # end discretize_state()
     
     def interp_on_state(self, A):
         '''returns an interpolating function of matrix A, assuming that A
-        is expressed on the state grid `self.state_grids`
+        is expressed on the state grid `self.state_grid`
         
-        the shape of A should be (len(g) for g in self.state_grids)
+        the shape of A should be (len(g) for g in self.state_grid)
         '''
         # Check the dimension of A:
-        expect_shape = tuple(len(g) for g in self.state_grids)
+        expect_shape = tuple(len(g) for g in self.state_grid)
         if A.shape != expect_shape:
             raise ValueError('array `A` should be of shape {:s}, not {:s}'.format(
                              str(expect_shape), str(A.shape)) )
@@ -292,8 +293,8 @@ class DPSolver(object):
             raise NotImplementedError('interpolation for state dimension > 2'
                                       ' is not yet implemented.')
         if len(expect_shape) == 2:
-            x1_grid = self.state_grids[0]
-            x2_grid = self.state_grids[1]
+            x1_grid = self.state_grid[0]
+            x2_grid = self.state_grid[1]
             A_interp = RectBivariateSplineBc(x1_grid, x2_grid, A, kx=1, ky=1)
             return A_interp
         else:
@@ -338,8 +339,8 @@ class DPSolver(object):
         '''
         t_start = datetime.now()
         # Iterator over the state grid:
-        state_grid = itertools.product(*self.state_grids)
-        state_dims = tuple(len(grid) for grid in self.state_grids)
+        state_grid = itertools.product(*self.state_grid)
+        state_dims = tuple(len(grid) for grid in self.state_grid)
         state_ind = itertools.product(*[range(d) for d in state_dims])
         
         # number of control variables
@@ -363,9 +364,9 @@ class DPSolver(object):
 #            print('\rstate loop {:.1%}...'.format(np.ravel_multi_index(
 #                                                  ind_x,(N_E,N_P_req))/(N_E*N_P_req))
 #                                                  , end='')
-        print('')
+        # end for each state value
         exec_time = (datetime.now() - t_start).total_seconds()
-        print('state loop run in {:.2f} s'.format(exec_time))
+        print('\rstate loop run in {:.2f} s'.format(exec_time))
         
         return (J_k, u_k)
     # end solve_step
@@ -384,13 +385,12 @@ class DPSolver(object):
         '''
         # compute an allowed control grid (depends on the state)
         u_grids, control_dims = self.control_grids(x_k)
-        nb_control = len(u_grids)
         # Iterate over the control grid
         J_xk_opt = np.inf
         u_xk_opt = None
         
         # grab the 1D perturbation vector
-        w_k = self.perturb_grids[0]
+        w_k = self.perturb_grid[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement an nD perturbation
         
@@ -440,7 +440,7 @@ class DPSolver(object):
             u_grids[i].shape = shape
         
         # grab the 1D perturbation vector
-        w_k = self.perturb_grids[0]
+        w_k = self.perturb_grid[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement nD perturbation
         
@@ -461,6 +461,58 @@ class DPSolver(object):
         u_xk_opt = [u_grids[i].flatten()[ind_opt[i]] for i in range(nb_control)]
         return (J_xk_opt, u_xk_opt)
     # end solve_state_point_vect()
+    
+    def print_summary(self):
+        '''summary information about the state of the SDP solver
+        '''
+        print('SDP solver for system "{:s}"'.format(self.sys.name))
+        ### Print a report on Discretization:
+        # a) State discretization:
+        grid_size = 'x'.join([str(len(grid)) for grid in self.state_grid])
+        print('\nState space discretized on a {:s} points grid'.format(grid_size))
+        for i, grid in enumerate(self.state_grid):
+            if len(grid) > 1:
+                step = grid[1] - grid[0]
+                print('  Δ{:s} = {:g}'.format(self.sys.state[i], step))
+            else: # len(grid) == 1
+                print('  {:s} fixed at {:g}'.format(self.sys.state[i], grid[0]))
+        
+        # b) Perturbation discretization:
+        grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grid])
+        print('\nPerturbation discretized on a {:s} points grid'.format(grid_size))
+        for i, grid in enumerate(self.perturb_grid):
+            if len(grid) > 1:
+                step = grid[1] - grid[0]
+                print('  Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
+            else: # len(grid) == 1
+                print('  {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
+        
+        # c) Control discretization
+        # Compute the average number of control points:
+        control_dims_list = []
+        if self.sys.control_box is not None:
+            for x_k in itertools.product(*self.state_grid):
+                # Compute the control grid dimension for each state
+                _, control_dims = self.control_grids(x_k)
+                control_dims_list.append(control_dims)
+            # Convert list to 2D array for easy stats:
+            cdim = np.array(control_dims_list)
+        
+        print('\nPerturbation discretization steps:')
+        for i in range(len(self.sys.control)):
+            step = self.control_steps[i]
+            print('  Δ{:s} = {:g}'.format(self.sys.control[i], step))
+            if control_dims_list:
+                print('  ->  [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
+                       cdim[:,i].min(), cdim[:,i].max(), cdim[:,i].mean()) )
+        # end for each control
+        if control_dims_list:
+            cdim_tot = np.prod(cdim, axis=1)
+            print('  total: [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
+                   cdim_tot.min(), cdim_tot.max(), cdim_tot.mean()) )
+        else:
+            print('Warning: sys.control_box is still to be defined!')
+    # end print_summary()
 # end DPSolver
 
 
@@ -547,11 +599,23 @@ if __name__ == '__main__':
     # control discretization step:
     dpsolv.control_steps=(.1,.1) # maximum 41 pts when -2,2 MW are admissible
     
+    dpsolv.print_summary()
+    
     print('Solving one step...')
     J_N = np.zeros((N_E,N_P_req))
     J, u = dpsolv.solve_step(J_N)
-    print('done!')
+    print('Solving second step...')
+    J, u = dpsolv.solve_step(J)
     
-    plt.imshow(u[:,:,0], interpolation='nearest')
+    # Make a quick plot of the optimal controls
+    fig = plt.figure('optimal controls', figsize=(10,4.5))
+    ax1 = fig.add_subplot(121, title='Stored power $P_{sto}$',
+                          xlabel=sys.state[1], ylabel=sys.state[0])
+    im = ax1.imshow(u[:,:,0], interpolation='nearest')
+    fig.colorbar(im)
+    ax2 = fig.add_subplot(122, title='Curtailed power $P_{cur}$',
+                          xlabel=sys.state[1], ylabel=sys.state[0])
+    im = ax2.imshow(u[:,:,1], interpolation='nearest')
+    fig.colorbar(im)
     plt.show()
-    
+
