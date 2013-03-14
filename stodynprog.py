@@ -178,16 +178,37 @@ class SysDescription(object):
     
     def print_summary(self):
         '''summary information about the dynamical system'''
-        print('System "{:s}"'.format(self.name))
-        print('  state vector:   {:s} (dim {:d})'.format(', '.join(self.state),
-                                                     len(self.state)) )
-        print('  control vector: {:s} (dim {:d})'.format(', '.join(self.control),
-                                                       len(self.control)) )
+        print('Dynamical system "{}" description'.format(self.name))
+        ### 1) general properties
+        station = 'stationnary' if self.stationnary else 'time dependent'
+        stoch = 'stochastic' if self.stochastic else 'deterministic'
+        print('* behavioral properties: {}, {}'.format(station, stoch))
+        
+        ### 2) info about functions:
+        print('* functions:')
+        funclist = [('dynamics', self.dyn),
+                    ('cost', self.cost),
+                    ('control box', self.control_box)]
+        maxlen = max([len(name) for name, _ in funclist])
+        for name, fun in funclist:
+            if fun is not None:
+                fname = '{0.__module__}.{0.__name__}'.format(fun)
+            else:
+                fname = 'None (to be defined)'
+            print('  - {0:{width}}: {1}'.format(name, fname, width=maxlen+1))
+        # end for each function
+        
+        ### 1) information about variables
+        print('* variables')
+        vectlist = [('state', self.state),
+                   ('control', self.control)]
         if self.stochastic:
-            print('  perturbation:   {:s} (dim {:d})'.format(', '.join(self.perturb),
-                                                             len(self.perturb)) )
-        else:
-            print('  no perturbation')
+            vectlist.append(('perturbation', self.perturb))
+        maxlen = max([len(name) for name, _ in vectlist])
+        for name, vect in vectlist:
+            print('  - {0:{width}}: {1} (dim {2:d})'.format(
+                        name,  ', '.join(vect), len(vect), width=maxlen+1 ))
+        # end for each vector
     # end print_summary()
     
     def __repr__(self):
@@ -333,7 +354,7 @@ class DPSolver(object):
     # end control_grids()
     
     #@profile
-    def solve_step(self, J_next):
+    def solve_step(self, J_next, report_time=True):
         '''solve one DP step on the entire state space grid,
         given and cost-to-go array `J_next` discretized over the state space grid
         '''
@@ -354,19 +375,19 @@ class DPSolver(object):
         J_next_interp = self.interp_on_state(J_next)
         
         # Loop over the state grid
-        print('starting state loop...', end='')
+        if report_time: print('starting state loop...', end='')
         for ind_x, x_k in itertools.izip(state_ind, state_grid):
             J_xk_opt, u_xk_opt = self.solve_state_point_vect(x_k, J_next_interp)
             # Save the optimal value:
             J_k[ind_x] = J_xk_opt
             u_k[ind_x] = u_xk_opt
             # Report progress:
-#            print('\rstate loop {:.1%}...'.format(np.ravel_multi_index(
-#                                                  ind_x,(N_E,N_P_req))/(N_E*N_P_req))
-#                                                  , end='')
+#            print('\rstate loop {:.1%}...'.format(
+#                  np.ravel_multi_index(ind_x, state_dims) / np.product(state_dims) ),
+#                  end='')
         # end for each state value
         exec_time = (datetime.now() - t_start).total_seconds()
-        print('\rstate loop run in {:.2f} s'.format(exec_time))
+        if report_time: print('\rstate loop run in {:.2f} s'.format(exec_time))
         
         return (J_k, u_k)
     # end solve_step
@@ -465,27 +486,27 @@ class DPSolver(object):
     def print_summary(self):
         '''summary information about the state of the SDP solver
         '''
-        print('SDP solver for system "{:s}"'.format(self.sys.name))
+        print('SDP solver for system "{}"'.format(self.sys.name))
         ### Print a report on Discretization:
         # a) State discretization:
         grid_size = 'x'.join([str(len(grid)) for grid in self.state_grid])
-        print('\nState space discretized on a {:s} points grid'.format(grid_size))
+        print('* state space discretized on a {:s} points grid'.format(grid_size))
         for i, grid in enumerate(self.state_grid):
             if len(grid) > 1:
                 step = grid[1] - grid[0]
-                print('  Δ{:s} = {:g}'.format(self.sys.state[i], step))
+                print('  - Δ{:s} = {:g}'.format(self.sys.state[i], step))
             else: # len(grid) == 1
-                print('  {:s} fixed at {:g}'.format(self.sys.state[i], grid[0]))
+                print('  - {:s} fixed at {:g}'.format(self.sys.state[i], grid[0]))
         
         # b) Perturbation discretization:
         grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grid])
-        print('\nPerturbation discretized on a {:s} points grid'.format(grid_size))
+        print('* perturbation discretized on a {:s} points grid'.format(grid_size))
         for i, grid in enumerate(self.perturb_grid):
             if len(grid) > 1:
                 step = grid[1] - grid[0]
-                print('  Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
+                print('  - Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
             else: # len(grid) == 1
-                print('  {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
+                print('  - {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
         
         # c) Control discretization
         # Compute the average number of control points:
@@ -498,12 +519,12 @@ class DPSolver(object):
             # Convert list to 2D array for easy stats:
             cdim = np.array(control_dims_list)
         
-        print('\nPerturbation discretization steps:')
+        print('* control discretization steps:')
         for i in range(len(self.sys.control)):
             step = self.control_steps[i]
-            print('  Δ{:s} = {:g}'.format(self.sys.control[i], step))
+            print('  - Δ{:s} = {:g}'.format(self.sys.control[i], step))
             if control_dims_list:
-                print('  ->  [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
+                print('    yields [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
                        cdim[:,i].min(), cdim[:,i].max(), cdim[:,i].mean()) )
         # end for each control
         if control_dims_list:
@@ -585,6 +606,7 @@ if __name__ == '__main__':
     sys.perturb_laws = [innov_law]
 
     sys.print_summary()
+    print('')
     
     ### Create the DP solver:
     dpsolv = DPSolver(sys)
@@ -600,6 +622,7 @@ if __name__ == '__main__':
     dpsolv.control_steps=(.1,.1) # maximum 41 pts when -2,2 MW are admissible
     
     dpsolv.print_summary()
+    print('')
     
     print('Solving one step...')
     J_N = np.zeros((N_E,N_P_req))
