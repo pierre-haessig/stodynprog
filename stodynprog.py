@@ -220,6 +220,44 @@ class SysDescription(object):
 # Interpolation class
 # TODO : use a nicer n-dim method (like multilinear interpolation)
 from scipy.interpolate import RectBivariateSpline
+from dolointerpolation.multilinear_cython import multilinear_interpolation
+
+class MlinInterpolator:
+    '''Multilinear interpolation class
+    wrapping Pablo Winant's Cython interpolation routine
+    
+    Note : API of this class is different from Pablo Winant's MultilinInterpolator
+    '''
+    def __init__(self, *x_grid):
+        self.ndim = len(x_grid)
+        self._xmin = np.array([x[0]  for x in x_grid])
+        self._xmax = np.array([x[-1] for x in x_grid])
+        self._xshape = np.array([len(x) for x in x_grid], dtype=np.int)
+        
+        self.values = None
+        
+    def set_values(self,values):
+        assert values.ndim == self.ndim
+        assert values.shape == tuple(self._xshape)
+        self.values = np.ascontiguousarray(np.atleast_2d(values.ravel()))
+    
+    
+    def __call__(self, *x_interp):
+        '''evaluate the interpolated function at coordinates `x_interp`
+        
+        output shape is the shape of broadcasted coordinate inputs.
+        '''
+        assert len(x_interp) == self.ndim
+        # Prepare the interpolated coordinates array
+        x_mesh = np.broadcast_arrays(*x_interp)
+        shape = x_mesh[0].shape
+        x_stack = np.row_stack([x.astype(float).ravel() for x in x_mesh])
+        #
+        a = multilinear_interpolation(self._xmin, self._xmax, self._xshape,
+                                      self.values, x_stack)
+        a = a.reshape(shape)
+        return a
+
 
 class RectBivariateSplineBc(RectBivariateSpline):
     '''extended RectBivariateSpline class,
@@ -295,6 +333,8 @@ class DPSolver(object):
             grid_xi = np.linspace(*linspace_args[i*3:i*3+3])
             self.state_grid.append(grid_xi)
         
+        self._state_grid_shape = tuple(len(g) for g in self.state_grid)
+        
         return self.state_grid
     # end discretize_state()
     
@@ -305,19 +345,21 @@ class DPSolver(object):
         the shape of A should be (len(g) for g in self.state_grid)
         '''
         # Check the dimension of A:
-        expect_shape = tuple(len(g) for g in self.state_grid)
+        expect_shape = self._state_grid_shape
         if A.shape != expect_shape:
             raise ValueError('array `A` should be of shape {:s}, not {:s}'.format(
                              str(expect_shape), str(A.shape)) )
         
-        if len(expect_shape) > 2:
-            raise NotImplementedError('interpolation for state dimension > 2'
-                                      ' is not yet implemented.')
-        if len(expect_shape) == 2:
-            x1_grid = self.state_grid[0]
-            x2_grid = self.state_grid[1]
-            A_interp = RectBivariateSplineBc(x1_grid, x2_grid, A, kx=1, ky=1)
+        if len(expect_shape) >= 2:
+            A_interp = MlinInterpolator(*self.state_grid)
+            A_interp.set_values(A)
             return A_interp
+            
+#        if len(expect_shape) == 2:
+#            x1_grid = self.state_grid[0]
+#            x2_grid = self.state_grid[1]
+#            A_interp = RectBivariateSplineBc(x1_grid, x2_grid, A, kx=1, ky=1)
+#            return A_interp
         else:
             raise NotImplementedError('interpolation for state dimension 1'
                                       ' is not yet implemented.')
@@ -376,6 +418,10 @@ class DPSolver(object):
         
         # Loop over the state grid
         if report_time: print('starting state loop...', end='')
+        
+#        from multiprocessing import Pool
+#        p = Pool(6)
+#        p.map()
         for ind_x, x_k in itertools.izip(state_ind, state_grid):
             J_xk_opt, u_xk_opt = self.solve_state_point_vect(x_k, J_next_interp)
             # Save the optimal value:
@@ -482,6 +528,73 @@ class DPSolver(object):
         u_xk_opt = [u_grids[i].flatten()[ind_opt[i]] for i in range(nb_control)]
         return (J_xk_opt, u_xk_opt)
     # end solve_state_point_vect()
+    
+    def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None):
+        '''evaluate the policy `pol` : returns the cost of each state
+        after `n_iter` steps.
+        (useful for *policy iteration* algorithm)
+        
+        If rel_dp is True, uses the relative DP algorithm instead of the
+        normal summation. False by default
+        
+        Returns
+        J_pol (array of shape self._state_grid_shape)
+        J_pol, J_ref if `rel_dp` is True
+        '''
+        state_dims = self._state_grid_shape
+        # Initial cost to start the evaluation with:
+        if J_zero is None:
+            J_zero = np.zeros(state_dims)
+        assert J_zero.shape == state_dims
+        J_pol = J_zero
+        
+        # Reference cost :
+        J_ref = 0.
+        # which state to use as reference:
+        ref_ind = tuple([nx//2 for nx in state_dims])
+        
+        # Policy : check the shape
+        nb_control = len(self.sys.control)
+        assert pol.shape == state_dims + (nb_control,)
+        
+        # Perturbation:
+        w_k = self.perturb_grid[0]
+        w_proba = self.perturb_proba[0]
+        # TODO : implement nD perturbation
+        
+        # Loop over instants
+        print('')
+        for k in range(n_iter):
+            print('\riteration {:d}/{:d}'.format(k,n_iter), end='')
+             # Interpolate the cost-to-go
+            J_pol_interp = self.interp_on_state(J_pol)
+            
+            # Loop over each state value:
+            state_grid = itertools.product(*self.state_grid)
+            state_ind = itertools.product(*[range(d) for d in state_dims])
+            for ind_x, x_k in itertools.izip(state_ind, state_grid):
+                ### Evaluate J_pol(x_k) ###
+                u_k = pol[ind_x]
+                args = x_k + tuple(u_k) + (w_k,)
+                # Compute a grid of next steps:
+                x_next = self.sys.dyn(*args)
+                 # Compute a grid of costs:
+                g_k_grid = self.sys.cost(*args) # instant cost
+                J_k_grid = g_k_grid + J_pol_interp(*x_next) # add the cost-to-go
+                # Expected (weighted mean) cost:
+                J = np.inner(J_k_grid, w_proba) # scalar
+                J_pol[ind_x] = J
+            # end for each state
+            if rel_dp:
+                J_ref = J_pol[ref_ind]
+                J_pol -= J_ref
+        # end for each instant
+        
+        if rel_dp:
+            return J_pol, J_ref
+        else:
+            return J_pol
+    # end eval_policy
     
     def print_summary(self):
         '''summary information about the state of the SDP solver
