@@ -542,6 +542,7 @@ class DPSolver(object):
         J_pol, J_ref if `rel_dp` is True
         '''
         state_dims = self._state_grid_shape
+        nb_state = len(self.sys.state)
         # Initial cost to start the evaluation with:
         if J_zero is None:
             J_zero = np.zeros(state_dims)
@@ -561,6 +562,17 @@ class DPSolver(object):
         w_k = self.perturb_grid[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement nD perturbation
+
+        
+        # Reshape the state grids to enable broadcasted operations:
+        state_grid = [None]*nb_state
+        for i in range(nb_state):
+            # create a tuple of ones of length (nb_state + 1) with -1 at index i
+            # (+1 used for the perturbation)
+            shape = (1,)*i + (-1,) + (1,)*(nb_state-i)
+            # inplace reshape:
+            state_grid[i] = np.reshape(self.state_grid[i], shape)
+        state_grid = tuple(state_grid)
         
         # Loop over instants
         print('')
@@ -568,22 +580,18 @@ class DPSolver(object):
             print('\riteration {:d}/{:d}'.format(k,n_iter), end='')
              # Interpolate the cost-to-go
             J_pol_interp = self.interp_on_state(J_pol)
+            # separate the controls
+            u_k = [pol[..., i].reshape(state_dims+(1,))
+                   for i in range(nb_control)] 
+            args = state_grid + tuple(u_k) + (w_k,)
+            # Compute a grid of next steps:
+            x_next = self.sys.dyn(*args)
+             # Compute a grid of costs:
+            g_k_grid = self.sys.cost(*args) # instant cost
+            J_k_grid = g_k_grid + J_pol_interp(*x_next) # add the cost-to-go
+            # Expected (weighted mean) cost:
+            J_pol = np.inner(J_k_grid, w_proba)
             
-            # Loop over each state value:
-            state_grid = itertools.product(*self.state_grid)
-            state_ind = itertools.product(*[range(d) for d in state_dims])
-            for ind_x, x_k in itertools.izip(state_ind, state_grid):
-                ### Evaluate J_pol(x_k) ###
-                u_k = pol[ind_x]
-                args = x_k + tuple(u_k) + (w_k,)
-                # Compute a grid of next steps:
-                x_next = self.sys.dyn(*args)
-                 # Compute a grid of costs:
-                g_k_grid = self.sys.cost(*args) # instant cost
-                J_k_grid = g_k_grid + J_pol_interp(*x_next) # add the cost-to-go
-                # Expected (weighted mean) cost:
-                J = np.inner(J_k_grid, w_proba) # scalar
-                J_pol[ind_x] = J
             # end for each state
             if rel_dp:
                 J_ref = J_pol[ref_ind]
@@ -596,6 +604,21 @@ class DPSolver(object):
             return J_pol
     # end eval_policy
     
+    def policy_iteration(self, pol_init, n_val, n_pol=1, J_init=None, rel_dp=False):
+        '''policy iteration algorithm
+        
+        Parameters:
+        
+        pol_init : initial policy to evaluate
+        n_val : number of value iterations to evaluate the policy
+        n_pol : number of policy iterations (default to 1)
+        
+        Returns
+        J_opt, pol
+        J_pol, J_ref, pol if `rel_dp` is True
+        '''
+        return None
+        
     def print_summary(self):
         '''summary information about the state of the SDP solver
         '''
