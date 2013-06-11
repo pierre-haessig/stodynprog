@@ -443,9 +443,14 @@ class DPSolver(object):
         # Loop over the state grid
         if report_time: print('value iteration...', end='')
         
+#        # Attempt at doing parallel processing:
 #        from multiprocessing import Pool
-#        p = Pool(6)
-#        p.map()
+#        p = Pool(3)
+#        args = itertools.izip(state_grid,
+#                              itertools.repeat(J_next_interp) )
+#        out = p.imap(self._value_at_state_vect, args)
+#        out = np.fromiter(out, float)
+
         for ind_x, x_k in itertools.izip(state_ind, state_grid):
             J_xk_opt, u_xk_opt = self._value_at_state_vect(x_k, J_next_interp)
             # Save the optimal value:
@@ -562,7 +567,8 @@ class DPSolver(object):
         return (J_xk_opt, u_xk_opt)
     # end _value_at_state_vect()
     
-    def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None, report_time=True):
+    def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None,
+                    report_time=True,  J_ref_full=False):
         '''evaluate the policy `pol` : returns the cost of each state
         after `n_iter` steps.
         (useful for *policy iteration* algorithm)
@@ -585,7 +591,7 @@ class DPSolver(object):
         J_pol = J_zero
         
         # Reference cost :
-        J_ref = 0.
+        J_ref = np.zeros(n_iter)
         # which state to use as reference:
         ref_ind = self._state_ref_ind
         
@@ -628,20 +634,23 @@ class DPSolver(object):
             
             # end for each state
             if rel_dp:
-                J_ref = J_pol[ref_ind]
-                J_pol -= J_ref
+                J_ref[k] = J_pol[ref_ind]
+                J_pol -= J_ref[k]
         # end for each instant
         
         exec_time = (datetime.now() - t_start).total_seconds()
-        if report_time: print('\rpolicy evaluation run in {:.2f} s'.format(exec_time))
+        if report_time: print('\rpolicy evaluation run in {:.2f} s     '.format(exec_time))
         
         if rel_dp:
+            if not J_ref_full:
+                # only report the last reference cost:
+                J_ref = J_ref[-1]
             return J_pol, J_ref
         else:
             return J_pol
     # end eval_policy
     
-    def policy_iteration(self, pol_init, n_val, n_pol=1, J_init=None, rel_dp=False):
+    def policy_iteration(self, pol_init, n_val, n_pol=1, rel_dp=False):
         '''policy iteration algorithm
         
         Parameters
@@ -662,10 +671,8 @@ class DPSolver(object):
                 # unpack the cost evaluation output
                 J_pol, J_ref = J_pol
                 print('ref policy cost: {:g}'.format(J_ref))
-            else:
-                J_pol = Cost_pol
             # 2) Improve the policy
-            J, pol = self.solve_step(J_pol)
+            J, pol = self.value_iteration(J_pol)
         # One last evaluation of the policy
         J_pol = self.eval_policy(pol, n_val, rel_dp)
         if rel_dp:
@@ -673,7 +680,7 @@ class DPSolver(object):
             print('ref policy cost: {:g}'.format(J_ref))
             return J_pol, J_ref, pol
         else:
-            return Cost_pol, pol
+            return J_pol, pol
     # end policy_iteration
     
     def print_summary(self):
