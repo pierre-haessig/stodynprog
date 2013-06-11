@@ -241,7 +241,6 @@ class MlinInterpolator:
         assert values.shape == tuple(self._xshape)
         self.values = np.ascontiguousarray(np.atleast_2d(values.ravel()))
     
-    
     def __call__(self, *x_interp):
         '''evaluate the interpolated function at coordinates `x_interp`
         
@@ -257,7 +256,8 @@ class MlinInterpolator:
                                       self.values, x_stack)
         a = a.reshape(shape)
         return a
-
+    # end __call__()
+# end MlinInterpolator
 
 class RectBivariateSplineBc(RectBivariateSpline):
     '''extended RectBivariateSpline class,
@@ -286,7 +286,12 @@ class RectBivariateSplineBc(RectBivariateSpline):
 
 class DPSolver(object):
     def __init__(self, sys):
-        '''Dynamic Programming solver based on Value Iteration
+        '''Dynamic Programming solver for stochastic dynamic control of `sys`
+        
+        The dynamical system `sys` should be a `SysDescription` object.
+        
+        DPSolver implements Value Iteration and Policy Iteration.
+        For the latter, policy evaluation is done by repeated value iterations.
         '''
         self.sys = sys
         # Initialization of discrete grids:
@@ -327,13 +332,22 @@ class DPSolver(object):
         '''
         assert len(linspace_args) == len(self.sys.state)*3
         
-        self.state_grid = []
+        state_grid = []
         for i in range(len(self.sys.state)):
             # discrete grid for state `i`
             grid_xi = np.linspace(*linspace_args[i*3:i*3+3])
-            self.state_grid.append(grid_xi)
+            state_grid.append(grid_xi)
+        self.state_grid = state_grid
         
-        self._state_grid_shape = tuple(len(g) for g in self.state_grid)
+        ### Store some additional data about the grid
+        # shape of the grid:
+        grid_shape = tuple(len(g) for g in self.state_grid)
+        self._state_grid_shape = grid_shape
+        # Reference indices (for relative DP algorithm)
+        # -> take the "middle" of the grid
+        ref_ind = tuple(nx//2 for nx in grid_shape) 
+        self._state_ref_ind = ref_ind
+        self._state_ref = tuple(g[i] for g,i in zip(state_grid, ref_ind))
         
         return self.state_grid
     # end discretize_state()
@@ -396,50 +410,69 @@ class DPSolver(object):
     # end control_grids()
     
     #@profile
-    def solve_step(self, J_next, report_time=True):
+    def value_iteration(self, J_next, rel_dp=False, report_time=True):
         '''solve one DP step on the entire state space grid,
         given and cost-to-go array `J_next` discretized over the state space grid
+        
+        Returns
+        (J_k, pol_k)          if `rel_dp` is False
+        (J_k, J_ref, pol_k)   if `rel_dp` is True
         '''
         t_start = datetime.now()
         # Iterator over the state grid:
         state_grid = itertools.product(*self.state_grid)
         state_dims = tuple(len(grid) for grid in self.state_grid)
         state_ind = itertools.product(*[range(d) for d in state_dims])
+        # Reference state for relative DP:
+        ref_ind = self._state_ref_ind
+        if rel_dp:
+            # Check that the cost-to-go is indeed a *differential* cost
+            # with a zero at the reference state
+            assert J_next[ref_ind] == 0.
         
         # number of control variables
         nb_control = len(self.sys.control)
         
         # Initialize the output arrays
         J_k = np.zeros(state_dims)
-        u_k = np.zeros(state_dims + (nb_control,) )
+        pol_k = np.zeros(state_dims + (nb_control,) )
         
         # Interpolating function of the cost-to-go
         J_next_interp = self.interp_on_state(J_next)
         
         # Loop over the state grid
-        if report_time: print('starting state loop...', end='')
+        if report_time: print('value iteration...', end='')
         
 #        from multiprocessing import Pool
 #        p = Pool(6)
 #        p.map()
         for ind_x, x_k in itertools.izip(state_ind, state_grid):
-            J_xk_opt, u_xk_opt = self.solve_state_point_vect(x_k, J_next_interp)
+            J_xk_opt, u_xk_opt = self._value_at_state_vect(x_k, J_next_interp)
             # Save the optimal value:
             J_k[ind_x] = J_xk_opt
-            u_k[ind_x] = u_xk_opt
+            pol_k[ind_x] = u_xk_opt
             # Report progress:
 #            print('\rstate loop {:.1%}...'.format(
 #                  np.ravel_multi_index(ind_x, state_dims) / np.product(state_dims) ),
 #                  end='')
         # end for each state value
-        exec_time = (datetime.now() - t_start).total_seconds()
-        if report_time: print('\rstate loop run in {:.2f} s'.format(exec_time))
         
-        return (J_k, u_k)
+        # Relative DP:
+        if rel_dp:
+            J_ref = J_k[ref_ind]
+            J_k -= J_ref
+        
+        exec_time = (datetime.now() - t_start).total_seconds()
+        if report_time: print('\rvalue iteration run in {:.2f} s'.format(exec_time))
+        
+        if rel_dp:
+            return J_k, J_ref, pol_k
+        else:
+            return J_k, pol_k
     # end solve_step
     
     #@profile
-    def solve_state_point_loop(self, x_k, J_next_interp):
+    def _value_at_state_loop(self, x_k, J_next_interp):
         '''find the optimal cost J_k and optimal control u_k
         at a given state point `x_k`
         
@@ -480,10 +513,10 @@ class DPSolver(object):
         # end for each control
         
         return (J_xk_opt, u_xk_opt)
-    # end solve_state_point_loop()
+    # end _value_at_state_loop()
     
     #@profile
-    def solve_state_point_vect(self, x_k, J_next_interp):
+    def _value_at_state_vect(self, x_k, J_next_interp):
         '''find the optimal cost J_k and optimal control u_k
         at a given state point `x_k`
         
@@ -527,9 +560,9 @@ class DPSolver(object):
         J_xk_opt = J[ind_opt]
         u_xk_opt = [u_grids[i].flatten()[ind_opt[i]] for i in range(nb_control)]
         return (J_xk_opt, u_xk_opt)
-    # end solve_state_point_vect()
+    # end _value_at_state_vect()
     
-    def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None):
+    def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None, report_time=True):
         '''evaluate the policy `pol` : returns the cost of each state
         after `n_iter` steps.
         (useful for *policy iteration* algorithm)
@@ -541,6 +574,8 @@ class DPSolver(object):
         J_pol (array of shape self._state_grid_shape)
         J_pol, J_ref if `rel_dp` is True
         '''
+        t_start = datetime.now()
+        
         state_dims = self._state_grid_shape
         nb_state = len(self.sys.state)
         # Initial cost to start the evaluation with:
@@ -552,7 +587,7 @@ class DPSolver(object):
         # Reference cost :
         J_ref = 0.
         # which state to use as reference:
-        ref_ind = tuple([nx//2 for nx in state_dims])
+        ref_ind = self._state_ref_ind
         
         # Policy : check the shape
         nb_control = len(self.sys.control)
@@ -575,9 +610,8 @@ class DPSolver(object):
         state_grid = tuple(state_grid)
         
         # Loop over instants
-        print('')
         for k in range(n_iter):
-            print('\riteration {:d}/{:d}'.format(k,n_iter), end='')
+            print('\rpolicy evaluation: iter. {:d}/{:d}'.format(k,n_iter), end='')
              # Interpolate the cost-to-go
             J_pol_interp = self.interp_on_state(J_pol)
             # separate the controls
@@ -598,6 +632,9 @@ class DPSolver(object):
                 J_pol -= J_ref
         # end for each instant
         
+        exec_time = (datetime.now() - t_start).total_seconds()
+        if report_time: print('\rpolicy evaluation run in {:.2f} s'.format(exec_time))
+        
         if rel_dp:
             return J_pol, J_ref
         else:
@@ -607,8 +644,7 @@ class DPSolver(object):
     def policy_iteration(self, pol_init, n_val, n_pol=1, J_init=None, rel_dp=False):
         '''policy iteration algorithm
         
-        Parameters:
-        
+        Parameters
         pol_init : initial policy to evaluate
         n_val : number of value iterations to evaluate the policy
         n_pol : number of policy iterations (default to 1)
@@ -617,8 +653,29 @@ class DPSolver(object):
         J_opt, pol
         J_pol, J_ref, pol if `rel_dp` is True
         '''
-        return None
-        
+        pol = pol_init
+        for k in range(n_pol):
+            print('policy iteration {:d}/{:d}'.format(k+1, n_pol))
+            # 1) Evaluate the policy:
+            J_pol = self.eval_policy(pol, n_val, rel_dp)
+            if rel_dp:
+                # unpack the cost evaluation output
+                J_pol, J_ref = J_pol
+                print('ref policy cost: {:g}'.format(J_ref))
+            else:
+                J_pol = Cost_pol
+            # 2) Improve the policy
+            J, pol = self.solve_step(J_pol)
+        # One last evaluation of the policy
+        J_pol = self.eval_policy(pol, n_val, rel_dp)
+        if rel_dp:
+            J_pol, J_ref = J_pol
+            print('ref policy cost: {:g}'.format(J_ref))
+            return J_pol, J_ref, pol
+        else:
+            return Cost_pol, pol
+    # end policy_iteration
+    
     def print_summary(self):
         '''summary information about the state of the SDP solver
         '''
@@ -674,7 +731,7 @@ class DPSolver(object):
 
 
 if __name__ == '__main__':
-    ### Example usage with a Energy Storage system
+    ### Example usage with an Energy Storage system
     import scipy.stats as stats
 
     ### Storage dynamics:
@@ -690,7 +747,7 @@ if __name__ == '__main__':
     innov_scale = P_req_scale*np.sqrt(1- phi**2)
     innov_law = stats.norm(loc=0, scale=innov_scale)
 
-    def dyn_sto(E, P_req, P_sto, P_cur, innov):
+    def dyn_sto(E, P_req, P_sto, innov):
         '''state transition function `f(x_k,u_k,w_k)` of a Energy storage
         returns (E(k+1), P_req(k+1))
         '''
@@ -701,43 +758,39 @@ if __name__ == '__main__':
         return (E_next, P_req_next)
 
 
-    def admissible_controls(E, P_req):
+    def admissible_P_sto(E, P_req):
         '''returns the set of admissible control U(x_k) of an Energy storage
-        The two controls are P_sto and P_cur.
+        Control is the stored power P_sto
         
         Returns the cartesian description of the admissible control space
-        (u1_min, u1_max), (u2_min, u2_max)
+        (u1_min, u1_max), 
         '''
-        # 1) Constraints on P_sto:
         P_neg = np.max(( -E/(1+a), -P_rated))
         P_pos = np.min(( (E_rated - E)/(1-a), P_rated))
-        U1 = (P_neg, P_pos) # [P_req, P_pos]
-        # 2) Constraints on the curtailment P_cur
-        U2 = (0, np.max((P_req,0)) )
-        U2 = (0,0) # disable curtailment
-        return (U1, U2)
+        U1 = (P_neg, P_pos)
+        return (U1, )
 
     
     ### Cost model
     c_dev = 200 # [€/MWh]
     
-    def cost_lin(E, P_req, P_sto, P_cur, innov):
+    def cost_lin(E, P_req, P_sto, innov):
         '''cost of one instant (linear penalty on the absolute deviation)'''
-        P_dev = P_req - P_cur - P_sto
+        P_dev = P_req - P_sto
         return c_dev * np.abs(P_dev)
     
-    def cost_quad(E, P_req, P_sto, P_cur, innov):
+    def cost_quad(E, P_req, P_sto, innov):
         '''a simple quadratic cost model
         which penalizes only the commitment deviation P_dev
         '''
-        P_dev = P_req - P_cur - P_sto
-        return P_dev**2 + P_cur**2
+        P_dev = P_req - P_sto
+        return P_dev**2
 
     
     ### Create the system description:
-    sys = SysDescription((2,2,1), name='NaS Storage')
+    sys = SysDescription((2,1,1), name='NaS Storage')
     sys.dyn = dyn_sto
-    sys.control_box = admissible_controls
+    sys.control_box = admissible_P_sto
     sys.cost = cost_quad
     sys.perturb_laws = [innov_law]
 
@@ -755,26 +808,21 @@ if __name__ == '__main__':
     N_w = 11
     dpsolv.discretize_perturb(-3*innov_scale, 3*innov_scale, N_w)
     # control discretization step:
-    dpsolv.control_steps=(.1,.1) # maximum 41 pts when -2,2 MW are admissible
+    dpsolv.control_steps=(.1,) # maximum 41 pts when -2,2 MW are admissible
     
     dpsolv.print_summary()
     print('')
     
-    print('Solving one step...')
+    print('Running 2 value iterations...')
     J_N = np.zeros((N_E,N_P_req))
-    J, u = dpsolv.solve_step(J_N)
-    print('Solving second step...')
-    J, u = dpsolv.solve_step(J)
+    J, u = dpsolv.value_iteration(J_N)
+    J, u = dpsolv.value_iteration(J)
     
     # Make a quick plot of the optimal controls
-    fig = plt.figure('optimal controls', figsize=(10,4.5))
-    ax1 = fig.add_subplot(121, title='Stored power $P_{sto}$',
+    fig = plt.figure('optimal controls', figsize=(5,4.5))
+    ax1 = fig.add_subplot(111, title='Stored power $P_{sto}$',
                           xlabel=sys.state[1], ylabel=sys.state[0])
     im = ax1.imshow(u[:,:,0], interpolation='nearest')
-    fig.colorbar(im)
-    ax2 = fig.add_subplot(122, title='Curtailed power $P_{cur}$',
-                          xlabel=sys.state[1], ylabel=sys.state[0])
-    im = ax2.imshow(u[:,:,1], interpolation='nearest')
     fig.colorbar(im)
     plt.show()
 
