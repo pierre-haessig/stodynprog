@@ -175,6 +175,20 @@ class SysDescription(object):
             raise ValueError('{:d} perturbation laws should be provided'
                              .format(len(self.perturb)))
         self._perturb_laws = laws
+        # Check the type of perturbations (continuous vs. discrete)
+        self.perturb_types = []
+        for l in laws:
+            t = None
+            try:
+                l.pdf(0) # probability *density* -> continuous
+                t = 'continuous'
+            except AttributeError:
+                try:
+                    l.pmf(0) # probability *mass* -> discrete
+                    t = 'discrete'
+                except AttributeError:
+                    raise ValueError('perturbation law {:s} should either have a pdf or a pmf method'.format(repr(l)))
+            self.perturb_types.append(t)
     
     def print_summary(self):
         '''summary information about the dynamical system'''
@@ -315,9 +329,15 @@ class DPSolver(object):
         for i in range(len(self.sys.perturb)):
             # discrete grid for perturbation `i`
             grid_wi = np.linspace(*linspace_args[i*3:i*3+3])
-            pdf_wi = self.sys.perturb_laws[i].pdf
-            proba_wi = pdf_wi(grid_wi)
-            proba_wi /= proba_wi.sum()
+            if self.sys.perturb_types[i] == 'continuous':
+                pdf_wi = self.sys.perturb_laws[i].pdf
+                proba_wi = pdf_wi(grid_wi)
+                proba_wi /= proba_wi.sum()
+            else: # discrete perturbation
+                pmf_wi = self.sys.perturb_laws[i].pmf
+                proba_wi = pmf_wi(grid_wi)
+                assert np.allclose(proba_wi.sum(), 1.)
+                #proba_wi /= proba_wi.sum()
 
             self.perturb_grid.append(grid_wi)
             self.perturb_proba.append(proba_wi)
@@ -364,7 +384,7 @@ class DPSolver(object):
             raise ValueError('array `A` should be of shape {:s}, not {:s}'.format(
                              str(expect_shape), str(A.shape)) )
         
-        if len(expect_shape) >= 2:
+        if len(expect_shape) <= 5:
             A_interp = MlinInterpolator(*self.state_grid)
             A_interp.set_values(A)
             return A_interp
@@ -375,8 +395,8 @@ class DPSolver(object):
 #            A_interp = RectBivariateSplineBc(x1_grid, x2_grid, A, kx=1, ky=1)
 #            return A_interp
         else:
-            raise NotImplementedError('interpolation for state dimension 1'
-                                      ' is not yet implemented.')
+            raise NotImplementedError('interpolation for state dimension >5'
+                                      ' is not implemented.')
     # end interp_on_state()
     
     def control_grids(self, state_k):
@@ -718,21 +738,30 @@ class DPSolver(object):
                 control_dims_list.append(control_dims)
             # Convert list to 2D array for easy stats:
             cdim = np.array(control_dims_list)
+        else:
+            print('Warning: sys.control_box is still to be defined!')
         
         print('* control discretization steps:')
         for i in range(len(self.sys.control)):
             step = self.control_steps[i]
             print('  - Δ{:s} = {:g}'.format(self.sys.control[i], step))
             if control_dims_list:
-                print('    yields [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
+                if cdim[:,i].min() != cdim[:,i].max():
+                    #the number of possible values *depends on the state*
+                    print(('    yields [{:,d} to {:,d}] possible values'+\
+                           ' ({:,.1f} on average)').format(
                        cdim[:,i].min(), cdim[:,i].max(), cdim[:,i].mean()) )
+                else:
+                    #the number of possible values is *constant*
+                    print('    yields {:,d} possible values'.format(
+                           cdim[0,i]) )
         # end for each control
-        if control_dims_list:
+        if control_dims_list and len(self.sys.control)>=2:
             cdim_tot = np.prod(cdim, axis=1)
-            print('  total: [{:,d} to {:,d}] points ({:,.1f} on average)'.format(
+            print('  control combinations:' +
+                  ' [{:,d} to {:,d}] possible values ({:,.1f} on average)'.format(
                    cdim_tot.min(), cdim_tot.max(), cdim_tot.mean()) )
-        else:
-            print('Warning: sys.control_box is still to be defined!')
+
     # end print_summary()
 # end DPSolver
 
