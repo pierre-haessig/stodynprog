@@ -1,0 +1,4 @@
+.. Links used throughout the StoDynProg documentation
+
+.. _Author's website: http://pierreh.eu
+.. _Dynamic Programming and Optimal Control: http://www.athenasc.com/dpbook.html

@@ -1,0 +1,160 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Introduction to StoDynProg &mdash; StoDynProg 0.1 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.1',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <script type="text/javascript" src="http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML"></script>
+    <link rel="top" title="StoDynProg 0.1 documentation" href="index.html" />
+    <link rel="next" title="A Step-by-step Example" href="example_inventory.html" />
+    <link rel="prev" title="StoDynProg documentation" href="index.html" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="example_inventory.html" title="A Step-by-step Example"
+             accesskey="N">next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="StoDynProg documentation"
+             accesskey="P">previous</a> |</li>
+        <li><a href="index.html">StoDynProg 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="introduction-to-stodynprog">
+<h1>Introduction to StoDynProg<a class="headerlink" href="#introduction-to-stodynprog" title="Permalink to this headline">¶</a></h1>
+<p>StoDynProg is a tool to help solving <em>stochastic optimal control</em> problems,
+also called dynamic optimization.
+It implements some algorithms of Dynamic Programming to solve such problems
+(Value Iteration, Policy Iteration algorithms) and most importantly provides
+an API to describe the optimization problem.</p>
+<div class="section" id="goals-and-scope">
+<h2>Goals and Scope<a class="headerlink" href="#goals-and-scope" title="Permalink to this headline">¶</a></h2>
+<p>This tool was created for research on the energy management
+of Energy Storage Systems like batteries (see <a class="reference external" href="http://pierreh.eu">Author&#8217;s website</a> for details).
+Even though it was written to have some generality, it&#8217;s probably somehow specific.
+Indeed, StoDynProg design may biaised towards handling features
+of author-specific problems.</p>
+<p>Let&#8217;s try to clarify the scope with the enumeration of these features.
+StoDynProg is meant to solve problems with:</p>
+<ul class="simple">
+<li><em>discrete time</em> (compulsory),</li>
+<li><em>continous state space</em>, which is discretized on a rectangular grid
+(so discrete state space works as well),</li>
+<li>a state space of <em>small dimension</em>
+(say less that 4 or 5, due to the &#8220;Curse of Dimensionality&#8221;)</li>
+<li>a control space of small dimension as well (say 1 or 2).</li>
+</ul>
+<p>This code is influenced by the book from which I learned Dynamic Optimization:
+<a class="reference external" href="http://www.athenasc.com/dpbook.html">Dynamic Programming and Optimal Control</a> by Dimitri Bertsekas.
+I recommend it warmly.</p>
+</div>
+<div class="section" id="stodynprog-api">
+<h2>StoDynProg API<a class="headerlink" href="#stodynprog-api" title="Permalink to this headline">¶</a></h2>
+<p>Within the <cite>stodynprog</cite> modules, two main classes are available.</p>
+<ol class="arabic simple">
+<li><cite>SysDescription</cite> is there for the problem description. It holds references
+to the state variables description, the dynamical function and the cost function.</li>
+<li><cite>DPSolver</cite> provides methods for solving the optimization problem
+(with Value Iteration or Policy Iteration).
+It also holds the parameters of the solving algorithm like the state discretization.</li>
+</ol>
+</div>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="index.html">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Introduction to StoDynProg</a><ul>
+<li><a class="reference internal" href="#goals-and-scope">Goals and Scope</a></li>
+<li><a class="reference internal" href="#stodynprog-api">StoDynProg API</a></li>
+</ul>
+</li>
+</ul>
+
+  <h4>Previous topic</h4>
+  <p class="topless"><a href="index.html"
+                        title="previous chapter">StoDynProg documentation</a></p>
+  <h4>Next topic</h4>
+  <p class="topless"><a href="example_inventory.html"
+                        title="next chapter">A Step-by-step Example</a></p>
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/intro.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="example_inventory.html" title="A Step-by-step Example"
+             >next</a> |</li>
+        <li class="right" >
+          <a href="index.html" title="StoDynProg documentation"
+             >previous</a> |</li>
+        <li><a href="index.html">StoDynProg 0.1 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2013, Pierre Haessig.
+      Last updated on Jul 03, 2013.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.3.
+    </div>
+  </body>
+</html>
