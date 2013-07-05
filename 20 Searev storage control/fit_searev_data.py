@@ -13,8 +13,11 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import scipy.signal as sig
+
 from scipy.optimize import fmin
 from scipy.linalg import toeplitz
+
+import statsmodels.api
 from statsmodels import tsa
 
 try:
@@ -24,42 +27,16 @@ except ImportError:
     sys.path.append('../../../30 Data Toolbox')
     import armaToolbox
 
-# Simulation parameters:
-damp = 4.e6 # N/(rad/s)
-torque_max = 2e6 # N.m
-power_max = 1.1e6 # W
 
-dt = 0.1 # [s]
-Hs = 3. # [m]
-Tp = 9. # [s]
+from searev_data import load, torque_law, dt
 
-# read Searev data file:
+### Load time series:
 fname = 'Em_1.txt'
-#fname = 'Em_2.txt'
-#fname = 'Em_3.txt'
-print('loading SEAREV simulation data %s' % fname)
-data = np.loadtxt('data/'+fname, skiprows=4)
+t, elev, angle, speed, torque, accel = load(fname)
+power = speed*torque/1e6 # [MW]
 
-# split columns:
-t, elev, angle, speed, torque = data.T
-accel = np.diff(speed)/dt 
-accel = np.concatenate(([0.], accel)) # backward derivative
-power=speed*torque/1e6 # [MW]
 n_pts = len(speed)
 
-
-# Regenerate the time vector because there are some irregularities:
-t = np.arange(n_pts)*dt
-
-# Torque command law ("PTO strategy")
-def torque_law(speed):
-  tor = speed * damp
-  # 1) Max torque limitation:
-  tor = np.where(tor >  torque_max,  torque_max, tor)
-  tor = np.where(tor < -torque_max, -torque_max, tor)
-  # 2) Max power limitation:
-  tor = np.where(tor*speed > power_max, power_max/speed, tor)
-  return tor
 
 def acov(x, maxlags, lags=None):
     '''auto covariance of x from lag 0 to `maxlags`
@@ -355,6 +332,46 @@ ax2.plot(t_prev, X_traj[1], label='stoch. simul.')
 ax2.legend(loc='upper left')
 
 ax2.set_xlim(t[-1] - 2*maxlags*dt, t[-1] + maxlags*dt*1.05)
+
+
+### Spectral analysis ### ######################################################
+NFFT = 1024
+
+
+#Pee, f = mpl.mlab.psd(elev,  Fs = 1/dt, NFFT=NFFT)
+Pan, f = mpl.mlab.psd(angle, Fs = 1/dt, NFFT=NFFT)
+Psp, f = mpl.mlab.psd(speed, Fs = 1/dt, NFFT=NFFT)
+Pac, f = mpl.mlab.psd(accel, Fs = 1/dt, NFFT=NFFT)
+
+# asymptote
+f0 = 0.15 # Hz -> 6.7 sec
+
+fig = plt.figure('spectrum')
+
+plt.loglog(f, Pan, 'g-', label='angle')
+plt.loglog(f, Psp, 'b-', label='speed')
+plt.loglog(f, Pac, 'c-', label='accel.')
+
+## AR(2) spectrum:
+nu = f*dt*2*np.pi # frequency in [0, pi]
+H_ar2 = 1/(1-p1*np.exp(-1j*nu) - p2*np.exp(-2j*nu))
+S_ar2 = np.abs(H_ar2)**2*innov_var*2*dt
+
+plt. loglog(f, S_ar2, 'b-', lw=3, alpha=0.3, label='AR(2) for speed')
+
+
+# asymptotes
+f = np.logspace(-1.1, 0.75)
+plt.loglog(f, 1/(f/f0)**4, '--', color='#FF5500', label=r'$1/f^4$')
+plt.loglog(f, 1/(f/f0)**6, '--', color='orange', label=r'$1/f^6$')
+plt.loglog(f, 1/(f/f0)**8, '--', color='red', label=r'$1/f^8$')
+
+plt.title('SEAREV data spectrums "{}"'.format(fname))
+plt.xlabel('frequency (Hz)')
+
+
+plt.legend(loc='lower left')
+fig.tight_layout()
 
 
 
