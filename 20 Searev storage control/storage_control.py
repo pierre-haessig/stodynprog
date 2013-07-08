@@ -14,6 +14,9 @@ import scipy.stats as stats
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 
+# Load Searev model data:
+from searev_data import searev_power, power_max, dt
+
 # Tweak how images are plotted with imshow
 mpl.rcParams['image.interpolation'] = 'none' # no interpolation
 mpl.rcParams['image.origin'] = 'lower' # origin at lower left corner
@@ -29,14 +32,6 @@ except ImportError:
 
 ### SEAREV+storage dynamics description
 
-# time step:
-dt = 0.1
-
-# Searev power-take-off (PTO) parameters
-damp = 4.e6 # N/(rad/s)
-torque_max = 2e6 # N.m
-power_max = 1.1 # MW
-
 # Searev AR(2) model at 0.1 s :
 c1 = 1.9799
 c2 = -0.9879
@@ -50,20 +45,6 @@ a = 0.00 # loss factor
 
 print('Storage ratings: {:.2f} MW / {:.2f} MJ ({:.2f} kWh)'.format(P_rated,
  E_rated, E_rated/3.6))
-
-# Torque command law ("PTO strategy")
-def searev_power(speed):
-    '''Searev power-take-off as function of speed (rad/s)
-    returns P_prod (MW)
-    '''
-    tor = speed * damp
-    # 1) Max torque limitation:
-    tor = np.where(tor >  torque_max,  torque_max, tor)
-    tor = np.where(tor < -torque_max, -torque_max, tor)
-    # 2) Max power limitation:
-    P_prod = tor*speed/1e6 # W -> MW
-    P_prod = np.where(P_prod > power_max, power_max, P_prod)
-    return P_prod
 
 def dyn_searev_sto(E_sto, Speed, Accel, P_sto, innov):
     '''state transition of the "SEAREV + storage" system
@@ -133,80 +114,82 @@ E_grid, S_grid, A_grid = x_grid
 N_w = 9
 dpsolv.discretize_perturb(-3*innov_std, 3*innov_std, N_w)
 # control discretization step:
-dpsolv.control_steps=(.01,) # 0.02 MW step
+dpsolv.control_steps=(.01,)
 
 dpsolv.print_summary()
 
 
+# An heuristic control law:
+def P_sto_law_lin(E_sto, Speed, Accel):
+    '''linear storage control law'''
+    P_prod = searev_power(Speed)
+    P_grid = P_rated*E_sto/E_rated
+    return P_prod - P_grid
+
 ###############################################################################
-### Computation
+### Optimization of the storage control law with policy iteration
 
-# Number of DP iterations:
-N = 600
-# range of instants to solve:
-k_range = np.arange(N-1, -1, -1)
-print('DP algorithm with {:d} iterations...'.format(N))
-
-### Initialize memory variables:
-# a) cost
-J_opt = np.zeros((N+1, N_E, N_S, N_A))
-# Start with a zero terminal cost:
-J_zero = np.zeros((N_E, N_S, N_A))
-J_opt[N] = J_zero
-# b) control
-ctrl_opt = np.zeros((N, N_E, N_S, N_A, 1))
-
-# Reference cost (for *relative* value iteration)
-J_ref_opt = np.zeros(N+1)
-ref_ind = (N_E//2, N_S//2, N_A//2)
-#ref_ind = (0,0)
-print('reference state: E_sto = {:.2f} MJ, S = {:.2f} rad/s, A = {:.2f} rad/s^2'.format(
-      E_grid[ref_ind[0]], S_grid[ref_ind[0]], A_grid[ref_ind[0]]))
+# A policy to start with:
+pol_lin = P_sto_law_lin(*dpsolv.state_grid_full)
+pol_lin = pol_lin[..., np.newaxis]
 
 
-### Computation
-t_start = datetime.now()
+### Look at the convergence of policy evaluation
+n_val = 1000
+J,J_ref = dpsolv.eval_policy(pol_lin, n_val, True, J_ref_full=True)
 
-for k in k_range:
-    print('\r  solving instant {:d} (N-{:d})  '.format(k,N-k), end='')
-    sys.stdout.flush()
-    continue ### Skip the computation ###
-    # one step Value iteration algo:
-    J_opt[k], ctrl_opt[k] = dpsolv.solve_step(J_opt[k+1], report_time=False)
-    # Take a reference state to get the reference cost
-    J_ref_opt[k] = J_opt[k][ref_ind]
-    # ... and substract this reference cost to keep only the differential cost:
-    J_opt[k] -= J_ref_opt[k]
-print('')
+plt.figure('policy evaluation convergence')
+plt.plot(J_ref)
+ref_lim = J_ref[-1]
+plt.hlines((ref_lim*.99, ref_lim*1.01),  0, n_val-1 , label='limit +/- 1 %',
+           linestyles='dashed', alpha=0.5)
+plt.title('Convergence of policy evaluation (grid {:d},{:d},{:d})'.format(N_E, N_S, N_A))
+plt.xlabel('Iterations of policy evaluation')
+plt.ylabel('Reference cost of linear policy')
+plt.show()
 
-## Save and load computation results :
-#np.savez('dp_arrays.npz', J_opt=J_opt, J_ref_opt=J_ref_opt, ctrl_opt=ctrl_opt)
-# Load:
-dp_arrays = np.load('dp_arrays_600_31.npz')
-J_opt = dp_arrays['J_opt']
-J_ref_opt = dp_arrays['J_ref_opt']
-ctrl_opt = dp_arrays['ctrl_opt']
+#print('reference cost after {:d} iterations of policy evaluation: {:3f}'.format(n_val, ref_lim))
+
+### Policy iteration:
+r = 0.
+n_pol = 5
+(J, r), pol = dpsolv.policy_iteration(pol_lin, n_val, n_pol, rel_dp=True)
+pol_fname = 'pol_E{:d}_grid3131_iter{:d}.npy'.format(E_rated, n_pol)
+np.save(pol_fname, pol); print('saving {:s}.npy'.format(pol_fname))
+pol = np.load(pol_fname)
 
 
-## Print some statitics:
-exec_time = (datetime.now() - t_start).total_seconds()
-print('DP iterations run in {:.1f} s ({:.2f} s/iter)'.format(exec_time, exec_time/N))
-print('')
+print('reference cost after {:d} policy improvements: {:3f}'.format(n_val, r))
 
-print('Reference cost after {:d} iterations:'.format(N))
-print('{:g} {:s}'.format(J_ref_opt[0], cost_label))
-if N>=2:
-    rel_var = (J_ref_opt[0] - J_ref_opt[1])/J_ref_opt[0]
-    print('  relative variation from iteration N-1: {:.2%}'.format(rel_var))
 
-# Compute the range of the differential cost:
-cost_range = (J_opt[0].min(), J_opt[0].max(), J_opt[0].max() - J_opt[0].min())
-print('Range of the relative cost: {:.4g} to {:.4g}'.format(*cost_range))
 
-print('')
 
-# Extract the P_sto control law:
-ctrl_sto = ctrl_opt[...,0]
+
+# Extract the P_sto law:
+pol_sto = pol[..., 0]
+
+
+#### Effect of the state discretization ########################################
+#N_grid_list = [9,10,11, 19,20,21, 30,31, 51, 61, 71]
+
+#J_ref_list = []
+#for N_grid in N_grid_list:
+#    print('discretization pts: {:d}^3'.format(N_grid))
+#    dpsolv.discretize_state(0, E_rated, N_grid,
+#                            S_min, S_max, N_grid,
+#                            A_min, A_max, N_grid)
+#    pol_lin = P_sto_law_lin(*dpsolv.state_grid_full)
+#    pol_lin = pol_lin[..., np.newaxis]
+#    J,J_ref = dpsolv.eval_policy(pol_lin, n_val, True)
+#    J_ref_list.append(J_ref)
+
+
+#plt.figure()
+#plt.plot(N_grid_list, J_ref_list, '-x')
+#plt.hlines(.061, 0, N_grid_list[-1], label='true cost ?')
+#plt.title('Effect of the state discretization')
+#plt.xlabel('size of the discretized grid (same in all three dimensions)')
+#plt.ylabel('Reference cost of linear policy')
 
 
 
@@ -228,19 +211,13 @@ E_sto[0] = E_sto_0
 Speed[0] = Speed_0
 Accel[0] = Accel_0
 
-# Control variables
-def P_sto_law_lin(E_sto, Speed, Accel):
-    '''linear storage control law'''
-    P_prod = searev_power(Speed)
-    P_grid = P_rated*E_sto/E_rated
-    return P_prod - P_grid
 
-P_sto_law = P_sto_law_lin
+#P_sto_law = P_sto_law_lin
 # use optimal control law :
-#P_sto_law = dpsolv.interp_on_state(ctrl_sto[0,:,:,:])
+P_sto_law = dpsolv.interp_on_state(pol_sto)
 
 # Load another policy:
-#P_sto_law = dpsolv.interp_on_state(np.load('u.npy')[...,0])
+#P_sto_law = dpsolv.interp_on_state(np.load('storage control/u.npy')[...,0])
 
 
 P_sto = np.zeros(N_sim)

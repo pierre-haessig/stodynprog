@@ -372,6 +372,20 @@ class DPSolver(object):
         return self.state_grid
     # end discretize_state()
     
+    @property
+    def state_grid_full(self):
+        '''broadcasted state grid
+        (compared to self.state_grid which is flat)
+        '''
+        state_dim = len(self.state_grid)
+        state_grid = []
+        for i, x_grid in enumerate(self.state_grid):
+            shape = [1]*state_dim
+            shape[i] = -1
+            state_grid.append(x_grid.reshape(shape))
+        
+        return np.broadcast_arrays(*state_grid)
+    
     def interp_on_state(self, A):
         '''returns an interpolating function of matrix A, assuming that A
         is expressed on the state grid `self.state_grid`
@@ -432,11 +446,13 @@ class DPSolver(object):
     #@profile
     def value_iteration(self, J_next, rel_dp=False, report_time=True):
         '''solve one DP step on the entire state space grid,
-        given and cost-to-go array `J_next` discretized over the state space grid
+        given and cost-to-go array `J_next` discretized over the state space grid.
+        
+        If rel_dp is True, J_next should be a (J_next, J_ref) tuple
         
         Returns
-        (J_k, pol_k)          if `rel_dp` is False
-        (J_k, J_ref, pol_k)   if `rel_dp` is True
+        (J_k, pol_k)
+        and J_k is a tuple (J_diff, J_ref) if `rel_dp` is True
         '''
         t_start = datetime.now()
         # Iterator over the state grid:
@@ -446,6 +462,8 @@ class DPSolver(object):
         # Reference state for relative DP:
         ref_ind = self._state_ref_ind
         if rel_dp:
+            # Split the cost tuple:
+            J_next, J_ref = J_next
             # Check that the cost-to-go is indeed a *differential* cost
             # with a zero at the reference state
             assert J_next[ref_ind] == 0.
@@ -491,9 +509,9 @@ class DPSolver(object):
         if report_time: print('\rvalue iteration run in {:.2f} s'.format(exec_time))
         
         if rel_dp:
-            return J_k, J_ref, pol_k
-        else:
-            return J_k, pol_k
+            # pack together the differential and relative costs:
+            J_k = J_k, J_ref
+        return J_k, pol_k
     # end solve_step
     
     #@profile
@@ -679,28 +697,32 @@ class DPSolver(object):
         n_pol : number of policy iterations (default to 1)
         
         Returns
-        J_opt, pol
-        J_pol, J_ref, pol if `rel_dp` is True
+        (J_pol, pol) arrays
+        and J_pol is a tuple (J_diff, J_ref) if `rel_dp` is True
         '''
         pol = pol_init
-        for k in range(n_pol):
-            print('policy iteration {:d}/{:d}'.format(k+1, n_pol))
-            # 1) Evaluate the policy:
-            J_pol = self.eval_policy(pol, n_val, rel_dp)
-            if rel_dp:
-                # unpack the cost evaluation output
-                J_pol, J_ref = J_pol
-                print('ref policy cost: {:g}'.format(J_ref))
-            # 2) Improve the policy
-            J, pol = self.value_iteration(J_pol)
-        # One last evaluation of the policy
+        
+        # First evaluation of the policy:
         J_pol = self.eval_policy(pol, n_val, rel_dp)
         if rel_dp:
-            J_pol, J_ref = J_pol
+            # J_pol is a tuple J_diff, J_ref
+            J_diff, J_ref = J_pol
             print('ref policy cost: {:g}'.format(J_ref))
-            return J_pol, J_ref, pol
-        else:
-            return J_pol, pol
+        
+        # Improve the policy:
+        for k in range(n_pol):
+            print('policy iteration {:d}/{:d}'.format(k+1, n_pol))
+            # 1) Improve the policy
+            _, pol = self.value_iteration(J_pol, rel_dp=rel_dp)
+            
+            # 2) Evaluate the new policy:
+            J_pol = self.eval_policy(pol, n_val, rel_dp)
+            if rel_dp:
+                # J_pol is a tuple J_diff, J_ref
+                J_ref = J_pol[1]
+                print('ref policy cost: {:g}'.format(J_ref))
+
+        return J_pol, pol
     # end policy_iteration
     
     def print_summary(self):
