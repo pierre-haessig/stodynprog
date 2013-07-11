@@ -14,6 +14,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from searev_data import load, searev_power, dt
+try:
+    import stodynprog
+except ImportError:    
+    sys.path.append('..')
+    import stodynprog
 
 # Storage rated energy and power:
 E_rated = 10 # [MJ]
@@ -129,8 +134,18 @@ if __name__ == '__main__':
     t, elev, angle, speed, torque, accel = load(fname)
     P_prod = speed*torque/1e6 # [MW]
     
+    # Load optimized trajectory:
+    import pickle
+    with open('P_sto_law.dat') as f:
+        P_sto_law_opt = pickle.load(f)
+    
+    sat = lambda A,l : (A if A>-l else -l) if A<l else l
+    a_sat = accel.std()*2.5
+    print('accel saturation at {:.3f}'.format(a_sat))
+    P_sto_law = lambda E,S,A : P_sto_law_opt(E,S,sat(A, a_sat))
+    
     # Run the simulation:
-    P_sto, P_grid, E_sto = storage_sim(speed, accel, P_prod, P_sto_law_lin)
+    P_sto, P_grid, E_sto = storage_sim(speed, accel, P_prod, P_sto_law)
     
     #mpl.rcParams['grid.color'] = (0.66,0.66,0.66, 0.4)
     

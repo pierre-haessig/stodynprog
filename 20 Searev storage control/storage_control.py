@@ -102,8 +102,8 @@ searev_sys.perturb_laws = [innov_law]
 dpsolv = DPSolver(searev_sys)
 # discretize the state space
 N_E = 31
-N_S = 31
-N_A = 31
+N_S = 61
+N_A = 61
 S_min, S_max = -4*.254, 4*0.254
 A_min, A_max = -4*.227, 4*.227
 x_grid = dpsolv.discretize_state(0, E_rated, N_E,
@@ -114,7 +114,7 @@ E_grid, S_grid, A_grid = x_grid
 N_w = 9
 dpsolv.discretize_perturb(-3*innov_std, 3*innov_std, N_w)
 # control discretization step:
-dpsolv.control_steps=(.01,)
+dpsolv.control_steps=(.001,)
 
 dpsolv.print_summary()
 
@@ -133,36 +133,36 @@ def P_sto_law_lin(E_sto, Speed, Accel):
 pol_lin = P_sto_law_lin(*dpsolv.state_grid_full)
 pol_lin = pol_lin[..., np.newaxis]
 
+# Number of iteration sfor policy evaluation:
+n_val = 1000
 
 ### Look at the convergence of policy evaluation
-n_val = 1000
-J,J_ref = dpsolv.eval_policy(pol_lin, n_val, True, J_ref_full=True)
+#J,J_ref = dpsolv.eval_policy(pol_lin, n_val, True, J_ref_full=True)
 
-plt.figure('policy evaluation convergence')
-plt.plot(J_ref)
-ref_lim = J_ref[-1]
-plt.hlines((ref_lim*.99, ref_lim*1.01),  0, n_val-1 , label='limit +/- 1 %',
-           linestyles='dashed', alpha=0.5)
-plt.title('Convergence of policy evaluation (grid {:d},{:d},{:d})'.format(N_E, N_S, N_A))
-plt.xlabel('Iterations of policy evaluation')
-plt.ylabel('Reference cost of linear policy')
-plt.show()
+#plt.figure('policy evaluation convergence')
+#plt.plot(J_ref)
+#ref_lim = J_ref[-1]
+#plt.hlines((ref_lim*.99, ref_lim*1.01),  0, n_val-1 , label='limit +/- 1 %',
+#           linestyles='dashed', alpha=0.5)
+#plt.title('Convergence of policy evaluation (grid {:d},{:d},{:d})'.format(N_E, N_S, N_A))
+#plt.xlabel('Iterations of policy evaluation')
+#plt.ylabel('Reference cost of linear policy')
+#plt.show()
 
 #print('reference cost after {:d} iterations of policy evaluation: {:3f}'.format(n_val, ref_lim))
 
 ### Policy iteration:
 r = 0.
 n_pol = 5
-(J, r), pol = dpsolv.policy_iteration(pol_lin, n_val, n_pol, rel_dp=True)
-pol_fname = 'pol_E{:d}_grid3131_iter{:d}.npy'.format(E_rated, n_pol)
-np.save(pol_fname, pol); print('saving {:s}.npy'.format(pol_fname))
-pol = np.load(pol_fname)
+pol_fname = 'storage control/pol_E{:d}_grid{:d}{:d}_iter{:d}.npy'.format(
+             E_rated, N_E, N_A, n_pol)
+# Computation:
+#(J, r), pol = dpsolv.policy_iteration(pol_lin, n_val, n_pol, rel_dp=True)
+#np.save(pol_fname, pol); print('SAVING "{:s}"'.format(pol_fname))
+pol = np.load(pol_fname); print('LOADING "{:s}"'.format(pol_fname))
 
 
-print('reference cost after {:d} policy improvements: {:3f}'.format(n_val, r))
-
-
-
+print('reference cost after {:d} policy improvements: {:3f}'.format(n_pol, r))
 
 
 # Extract the P_sto law:
@@ -216,9 +216,11 @@ Accel[0] = Accel_0
 # use optimal control law :
 P_sto_law = dpsolv.interp_on_state(pol_sto)
 
-# Load another policy:
-#P_sto_law = dpsolv.interp_on_state(np.load('storage control/u.npy')[...,0])
-
+### Save the policiy (stodynprog.MlinInterpolator object)
+#import pickle
+#f = open('P_sto_law.dat','w')
+#pickle.dump(P_sto_law, f)
+#f.close()
 
 P_sto = np.zeros(N_sim)
 
@@ -301,21 +303,33 @@ plt.plot(t_x, E_sto)
 #plt.colorbar()
 
 
-## Mayavi:
+### Mayavi:
+from mayavi import mlab
+
+# Compute powers as 3D arrays
+P_p3 = searev_power(S_grid).reshape(1,-1,1)
+P_s3 = pol_sto
+P_g3 = P_p3 - P_s3
+
+# 3D Volume slicer:
 #from volume_slicer import VolumeSlicer
-#P_p3 = searev_power(S_grid).reshape(1,-1,1)
-#m = VolumeSlicer(data=J_opt[0, :,:,:])
-#m = VolumeSlicer(data=P_p3 - ctrl_sto[0, :,:,:])
+#m = VolumeSlicer(data=P_g3)
 #m.configure_traits()
 
 ## Contour 3D:
-#from mayavi import mlab
-#x,y,z = np.broadcast_arrays(E_grid.reshape(-1,1,1)/E_rated*2,
-#                            S_grid.reshape(1,-1,1), A_grid)
-#c= mlab.contour3d(x,y,z,P_p3 - ctrl_sto[0, :,:,:], contours=10)
-## Animation:
-#for i in range(N)[::-1]:
-#    c.mlab_source.scalars = P_p3 - ctrl_sto[i, :,:,:]
+x,y,z = dpsolv.state_grid_full
+x = x/E_rated*2 # rescale the energy variable
+c= mlab.contour3d(x,y,z, P_g3, contours=10)
 
+
+### Surface representation of P_grid:
+## P_grid = f(speed, accel)
+## with one surface for each State of Energy:
+for n_E in range(0, N_E, 5):
+    mlab.surf(y[n_E],z[n_E], P_g3[n_E], vmin=0, vmax=power_max,
+              representation='surface', warp_scale=1.5, opacity=0.3)
+
+### Attempt at showing the underlying 2D structure of the control law
+#mlab.points3d(x, np.sqrt(y**2+z**2), P_g3, mode='point')
 
 plt.show()

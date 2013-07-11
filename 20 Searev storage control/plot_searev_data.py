@@ -14,7 +14,7 @@ from __future__ import division, print_function, unicode_literals
 import numpy as np
 import matplotlib.pyplot as plt
 
-from searev_data import load, damp
+from searev_data import load, damp, torque_law
 
 ### Load time series:
 fname = 'Em_1.txt'
@@ -126,9 +126,28 @@ ax2t.xaxis.get_major_locator().set_params(prune='both') # extremal time ticks
 ax2tz.xaxis.get_major_locator().set_params(prune='both') # extremal time ticks
 
 
-# 3D plot:
+### Phase portrait
+fig = plt.figure('phase portrait')
+
+ax = fig.add_subplot(111, title=u'Phase portrait (Ω,a) of the SEAREV\n'
+                                 'with leveled viscous torque PTO', 
+                          xlabel='speed (rad/s)', ylabel=u'accel (rad/s²)')
+
+s = np.linspace(-1,1, 500)
+ax.plot(s, torque_law(s)/damp, 'r', label=u'T(Ω)/damp')
+ax.plot(s, s, 'r--', label=u'Ω')
+ax.plot(speed, accel, '-', lw=0.3)
+ax.legend(loc='upper right')
+
+# 3D phase portrait:
+#mlab.plot3d(angle, speed, accel, tube_radius=None, opacity=0.3, color=(0,0,1))
+
+# 3D auto-regression plot:
 #from mayavi import mlab
 #mlab.points3d(angle[:-1], speed[:-1], speed[1:], mode='point')
+
+
+
 
 
 plt.show()
