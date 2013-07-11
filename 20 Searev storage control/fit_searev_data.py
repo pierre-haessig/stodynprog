@@ -28,7 +28,7 @@ except ImportError:
     import armaToolbox
 
 
-from searev_data import load, torque_law, dt
+from searev_data import load, torque_law, damp, dt
 
 ### Load time series:
 fname = 'Em_1.txt'
@@ -190,6 +190,8 @@ print(' * innovation sd: {:g}'.format(np.sqrt(innov_var)))
 model = {'ar':ar_coef, 'ma':[]}
 innov_gen = lambda size: np.random.normal(scale = np.sqrt(innov_var), size=size)
 speed_sim = armaToolbox.arima_sim(model, n_pts, innov_gen = innov_gen)
+accel_sim = np.zeros(n_pts)
+accel_sim[:-1] = np.diff(speed_sim)/dt
 
 power_sim = speed_sim*torque_law(speed_sim)/1e6
 
@@ -252,8 +254,92 @@ err_sim = rnd.multivariate_normal([0,0], innov_cov, maxlags).T
 for i in range(1, maxlags+1):
     X_prev[:,i] = np.dot(T,X_prev[:,i-1])
     X_traj[:,i] = np.dot(T,X_traj[:,i-1]) + err_sim[:,i-1]
+#    reg = torque_law(X_prev[[1],i-1])/damp-X_prev[1,i-1]
+#    X_reg = np.concatenate((X_prev[:,i-1], reg))
+
+#    X_prev[:,i] = np.dot(Topt,X_reg)
+#    X_traj[:,i] = np.dot(Topt,X_reg) + err_sim[:,i-1]
 
 
+
+### Non-linear AR(2) model #####################################################
+n_traj = 10
+# Starting values of NLAR2 from AR(2) estimation:
+ps = p1+p2 # effect of speed
+pa = -dt*p2 # effect of acceleration
+pt = 0. # effect of torque (non-linear part)
+ptv = 0. # effect of torque variations
+innov_std = np.sqrt(innov_var)
+
+def NLAR_sim(params, S, S_lag):
+    '''simulate 1 step of a non-linear AR(2) model of speed
+    
+    params = ps, pa, pt, ptv, std
+    '''
+    ps, pa, pt, ptv, std = params
+    A = (S-S_lag)/dt
+
+    Tnl = torque_law(S)/damp - S
+    Tnl_lag = torque_law(S_lag)/damp - S_lag
+    Tvar = (Tnl - Tnl_lag)/dt
+
+    innov = rnd.normal(scale=innov_std, size=S.shape)
+    # dynimical equation:
+    S_next = ps*S + pa*A + pt*Tnl + ptv*Tvar + innov
+    return S_next
+
+def NLAR_sim_traj(params, S, S_lag, n_sim):
+    '''simulate trajectories of length (n_sim+2)
+    of a non-linear AR(2) model of spee
+    '''
+    S = np.atleast_1d(S)
+    S_lag = np.atleast_1d(S_lag)
+    n_traj = len(S)
+    S_sim = np.zeros((n_sim+2, n_traj))
+    S_sim[0] = S_lag
+    S_sim[1] = S
+    for i in range(2,n_sim+2):
+        S_sim[i] = NLAR_sim(params, S_sim[i-1], S_sim[i-2])
+    return S_sim
+
+def NLAR_pred_error(params, fitlags=100):
+    '''quadratic prediction error of the NL AR(2) model'''
+    ps, pa, pt, ptv, std = params
+    
+    # Initialize
+    S_traj = np.repeat(np.atleast_2d(speed), n_traj, 0).T
+    assert S_traj.shape == (len(speed), n_traj)
+    S = S_traj[1:]
+    S_lag = S_traj[:-1]
+
+    quad_error = 0.
+    print('')
+    for i in range(fitlags):
+        print('\rhorizon {}/{}'.format(i+1, fitlags), end='')
+        # one step further:
+        S_next = NLAR_sim((ps, pa, pt, ptv, std), S, S_lag)
+        # Compute prediction error and accumulate
+        prev_error = speed[2+i:] - S_next[:-1-i].mean(axis=1)
+        quad_error += np.mean(prev_error**2)/fitlags
+        # Prepare next step
+        S_lag = S
+        S = S_next
+    print()
+    return quad_error
+
+
+## Evaluate the average multi-step prediction error:
+#qerr= NLAR_pred_error((ps, pa, pt, ptv, innov_std))
+#print(qerr)
+
+# Lauch the NLAR optimization:
+param_0 = (ps, pa, pt, ptv, innov_std)
+# param_opt100 = fmin(NLAR_pred_error, param_0, maxfun=100)
+param_opt100 = np.array([  9.91962946e-01,   9.82452953e-02,
+                           3.06547920e-04, 7.02369575e-05,
+                           3.48512704e-03]) # precomputed
+
+# Conclusion : NLAR2 is not working well !!
 
 ### Plot #######################################################################
 mpl.rcParams['grid.color'] = (0.66,0.66,0.66, 0.4)
@@ -286,18 +372,23 @@ fig.tight_layout()
 
 
 ### 2) Trajectory comparison
-fig = plt.figure('traj', figsize=(6,5))
-ax = fig.add_subplot(211, title='trajectory comparison', ylabel='speed (rad/s)')
+fig = plt.figure('traj', figsize=(8,5))
+# a) acceleration
+ax = fig.add_subplot(311, title='Trajectory comparison: data {} vs. model'.format(fname),
+                     ylabel=u'acceleration (rad/s²)')
+ax.plot(t, accel, label='data')
+ax.plot(t, accel_sim + 2, label='AR(2) derivative')
+ax.legend(loc='upper right')
+# b) speed
+ax = fig.add_subplot(312, ylabel='speed (rad/s)', sharex=ax)
 ax.plot(t, speed, label='data')
-ax.plot(t, speed_sim + 6*speed.std(), label='AR(2) model')
-
-ax = fig.add_subplot(212, title='power trajectory comparison',
-                          xlabel='time (s)', ylabel='power (MW)', sharex=ax)
+ax.plot(t, speed_sim + 2., label='AR(2) model')
+ax.legend(loc='upper right')
+# c) Power
+ax = fig.add_subplot(313, xlabel='time (s)', ylabel='power (MW)', sharex=ax)
 ax.plot(t, power, label='data')
-ax.plot(t, power_sim + 2., label='AR(2) model')
-
-
-
+ax.plot(t, power_sim + 1.5, label='AR(2) model')
+ax.legend(loc='upper right')
 
 
 
@@ -373,6 +464,21 @@ plt.xlabel('frequency (Hz)')
 plt.legend(loc='lower left')
 fig.tight_layout()
 
+
+
+#### Plot NLAR2 results:
+n_sim = 500
+k = 2098
+# 10 trajectories
+plt.figure('NLAR2')
+plt.plot(t[:k+n_sim], speed[:k+n_sim], 'b')
+
+s_sim = NLAR_sim_traj(param_opt100, [speed[k+1]]*10, speed[k], n_sim)
+plt.plot(t[k:k+n_sim+2], s_sim, 'g', alpha=0.5)
+
+s_sim = NLAR_sim_traj((ps, pa, pt, -3e-3, innov_std), [speed[k+1]]*10, speed[k], n_sim)
+plt.plot(t[k:k+n_sim+2], s_sim, 'r', alpha=0.5)
+plt.legend(('data', 'trajectories'))
 
 
 plt.show()
