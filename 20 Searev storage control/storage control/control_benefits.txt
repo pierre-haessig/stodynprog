@@ -1,0 +1,14 @@
+loading SEAREV simulation data "Em_1.txt"
+linear control:    0.137 std, 0.0608 mse
+optimized control: 0.100 std, 0.0537 mse
+criterion reduction: -27% std, -12% mse
+
+loading SEAREV simulation data "Em_2.txt"
+linear control:    0.165 std, 0.0622 mse
+optimized control: 0.139 std, 0.0559 mse
+criterion reduction: -16% std, -10% mse
+
+loading SEAREV simulation data "Em_3.txt"
+linear control:    0.125 std, 0.0451 mse
+optimized control: 0.097 std, 0.0401 mse
+criterion reduction: -22% std, -11% mse
