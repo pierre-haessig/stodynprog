@@ -303,7 +303,7 @@ plt.plot(t_x, E_sto)
 #plt.colorbar()
 
 
-### Mayavi:
+### 3D plots with Mayavi #######################################################
 from mayavi import mlab
 
 # Compute powers as 3D arrays
@@ -311,25 +311,43 @@ P_p3 = searev_power(S_grid).reshape(1,-1,1)
 P_s3 = pol_sto
 P_g3 = P_p3 - P_s3
 
-# 3D Volume slicer:
-#from volume_slicer import VolumeSlicer
-#m = VolumeSlicer(data=P_g3)
-#m.configure_traits()
 
-## Contour 3D:
+### Contour 3D of P_grid:
+mlab.figure(0, fgcolor=(0.5, 0.5, 0.5), bgcolor=(1, 1, 1) )
 x,y,z = dpsolv.state_grid_full
 x = x/E_rated*2 # rescale the energy variable
 c= mlab.contour3d(x,y,z, P_g3, contours=10)
-
+# axes:
+mlab.axes(xlabel='E_sto', ylabel='Speed', zlabel='Accel',
+          ranges=(0, E_rated, S_min, S_max, A_min, A_max))
 
 ### Surface representation of P_grid:
 ## P_grid = f(speed, accel)
 ## with one surface for each State of Energy:
+mlab.figure(1, fgcolor=(0.5, 0.5, 0.5), bgcolor=(1, 1, 1) )
+
+warp_scale=1.5
+
 for n_E in range(0, N_E, 5):
-    mlab.surf(y[n_E],z[n_E], P_g3[n_E], vmin=0, vmax=power_max,
-              representation='surface', warp_scale=1.5, opacity=0.3)
+    surf_Pg = mlab.surf(y[n_E],z[n_E], P_g3[n_E], vmin=0, vmax=power_max,
+                        representation='surface',
+                        warp_scale=warp_scale, opacity=0.3)
+    # Annotation of the State of Energy
+    mlab.text(S_min, A_min, 'E={:.1f}'.format(E_grid[n_E]),
+              z=P_g3[n_E,0,0]*warp_scale, width=0.04)
+
+mlab.axes(ranges=(S_min, S_max, A_min, A_max, 0, power_max),
+          extent=(S_min, S_max, A_min, A_max, 0, power_max*warp_scale),
+          xlabel='speed', ylabel='accel', zlabel='P_grid')
+
 
 ### Attempt at showing the underlying 2D structure of the control law
-#mlab.points3d(x, np.sqrt(y**2+z**2), P_g3, mode='point')
+mlab.figure(2, fgcolor=(0.5, 0.5, 0.5), bgcolor=(1, 1, 1) )
+x,y,z = dpsolv.state_grid_full
+x = x/E_rated # rescale the energy variable
+r =  (y/y.std())**2 + (z/z.std())**2
+r = r/r.max()
+mlab.points3d(x, np.sqrt(r), P_g3, mode='point', color=(0,0,1))
+mlab.axes(xlabel='SoE', ylabel='r=f(S,A)', zlabel='P_grid')
 
 plt.show()

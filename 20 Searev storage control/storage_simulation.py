@@ -16,7 +16,8 @@ import matplotlib.pyplot as plt
 from searev_data import load, searev_power, dt
 try:
     import stodynprog
-except ImportError:    
+except ImportError:
+    import sys
     sys.path.append('..')
     import stodynprog
 
@@ -39,14 +40,22 @@ def P_sto_law_lin(E_sto, Speed, Accel):
 #TODO: add the ability to load optimized control laws
 
 # colors
-c = {'red':'#df025f',
+c = {'light gray':'#dfdfdf',
+     'red':'#df025f',
      'light red':'#ffbfda',
      'purple':'#68006C',
-     'steel blue':'#469bd0'
+     'steel blue':'#469bd0',
+     'dark blue':'#101082',
+     'light blue':'#00aaff'
      }
 
+c['P_prod'] = c['light gray']
+c['P_grid'] = c['dark blue']
+c['P_sto'] = c['dark blue']
 
-def storage_sim(speed, accel, P_prod, P_sto_law=P_sto_law_lin, E_sto_0 = E_rated/3):
+
+def storage_sim(speed, accel, P_prod, P_sto_law,
+                E_sto_0 = E_rated/3, check_bounds=True):
     '''Simple SEAREV storage simulation.
     (without saturation support -> raises an error if storage runs out of bounds)
     
@@ -68,11 +77,13 @@ def storage_sim(speed, accel, P_prod, P_sto_law=P_sto_law_lin, E_sto_0 = E_rated
     for k in k_range:
         # Storage Control computation:
         P_sto[k] = P_sto_law(E_sto[k], speed[k], accel[k])
-        assert -P_rated <= P_sto[k] <= P_rated
+        if check_bounds:
+            assert -P_rated <= P_sto[k] <= P_rated
         
         # State evolution:
         E_sto_n = E_sto[k] + (P_sto[k] - a*abs(P_sto[k]))*dt
-        assert 0 <= E_sto_n <= E_rated
+        if check_bounds:
+            assert 0 <= E_sto_n <= E_rated
         E_sto[k+1] = E_sto_n
     # end for
     # Power delivered to the grid
@@ -88,7 +99,7 @@ def plot_trajectories(t, P_prod, P_sto, P_grid, E_sto):
     '''
     t_x = np.arange(len(t)+1)*dt
     
-    fig = plt.figure('trajectories')
+    fig = plt.figure('trajectories', figsize=(6,6))
     # Create the suplots:
     if len(fig.axes) != 3:
         fig .clear()
@@ -96,16 +107,22 @@ def plot_trajectories(t, P_prod, P_sto, P_grid, E_sto):
                                    ylabel='Power (MW)')
         ax2 = fig.add_subplot(312, sharex=ax1, ylabel='$P_{sto}$ (MW)')
         ax3 = fig.add_subplot(313, sharex=ax1, xlabel='time (s)',
-                                   ylabel='$E_{sto}$ (MJ)')
+                                   ylabel='Energy $E_{sto}$ (MJ)')
+        ax1.label_outer()
+        ax2.label_outer()
+        ax1.grid(False)
+        ax2.grid(False)
+        ax3.grid(False)
     else:
         # use existing axes
         ax1, ax2, ax3 = fig.axes
     
     # 1) plot P_prod, P_grid
-    ax1.plot(t, P_prod, color=c['light red'], label='$P_{prod}$', zorder=2)
-    ax1.plot(t, P_grid, color=c['purple'], label='$P_{grid}$', zorder=3)
+    ax1.plot(t, P_prod, color=c['P_prod'], label='$P_{prod}$', zorder=2)
+    ax1.plot(t, P_grid, color=c['P_grid'], label='$P_{grid}$', zorder=3)
     ax1.hlines(P_prod.mean(), t[0], t[-1], label='average',
-              color=c['red'], zorder=4, alpha=0.5)
+               color=(0.5,)*3, zorder=4, lw=0.5)
+    ax1.set_ylim(0, 1.2)
     
     if ax1.get_legend() is None:
         ax1.legend(loc='upper right', prop={'size':10}, borderaxespad=0.)
@@ -117,14 +134,16 @@ def plot_trajectories(t, P_prod, P_sto, P_grid, E_sto):
         box.set_alpha(.7)
     
     # 2) plot P_sto
-    ax2.plot(t, P_sto, color=c['steel blue'])
+    ax2.plot(t, P_sto, color=c['P_sto'])
+    ax2.set_ylim(-P_rated, P_rated)
     
     # 3) plot E_sto
-    ax3.plot(t_x, E_sto, color=c['steel blue'])
+    ax3.plot(t_x, E_sto, color=c['P_sto'])
     #plt.hlines([0, E_rated], 0, t[-1], colors='gray')
     ax3.set_ylim(0, E_rated)
 
     fig.tight_layout()
+    fig.canvas.draw()
     plt.show()
     return fig
 
@@ -134,20 +153,62 @@ if __name__ == '__main__':
     t, elev, angle, speed, torque, accel = load(fname)
     P_prod = speed*torque/1e6 # [MW]
     
+    ### Storage with linear policy ###
+    P_sto, P_grid, E_sto = storage_sim(speed, accel, P_prod, P_sto_law_lin)
+    print('With linear storage management')
+    std_lin = P_grid.std()
+    print('P_grid std: {:.3f}'.format(std_lin))   
+    
+    
+    # Plot the trajectories
+    fig = plot_trajectories(t, P_prod, P_sto, P_grid, E_sto)
+    
+    ### Compare with optimized policy:
     # Load optimized trajectory:
     import pickle
     with open('P_sto_law.dat') as f:
         P_sto_law_opt = pickle.load(f)
     
-    sat = lambda A,l : (A if A>-l else -l) if A<l else l
-    a_sat = accel.std()*2.5
-    print('accel saturation at {:.3f}'.format(a_sat))
-    P_sto_law = lambda E,S,A : P_sto_law_opt(E,S,sat(A, a_sat))
+#    # Enable saturation:
+#    sat = lambda A,l : (A if A>-l else -l) if A<l else l
+#    a_sat = accel.std()*2.5
+#    print('accel saturation at {:.3f}'.format(a_sat))
+#    P_sto_law = lambda E,S,A : P_sto_law_opt(E,S,sat(A, a_sat))
+    P_sto_law = P_sto_law_opt
     
     # Run the simulation:
     P_sto, P_grid, E_sto = storage_sim(speed, accel, P_prod, P_sto_law)
+    print('With optimized storage management')
+    std_opt = P_grid.std()
+    print('P_grid std: {:.3f}'.format(std_opt))
     
-    #mpl.rcParams['grid.color'] = (0.66,0.66,0.66, 0.4)
+    ### Plot the new trajectories
+    c['P_grid'] = c['light blue']
+    c['P_sto'] = c['light blue']
+    ax1, ax2, ax3 = fig.axes
+    t_x = np.arange(len(t)+1)*dt
+    ax1.plot(t, P_grid, color=c['P_grid'], label='$P_{grid}$', zorder=3)
+    ax2.plot(t, P_sto, color=c['P_sto'])
+    ax3.plot(t_x, E_sto, color=c['P_sto'])
     
-    ### Plot the trajectories ###
-    plot_trajectories(t, P_prod, P_sto, P_grid, E_sto)
+    # Improvement:
+    std_change = (std_opt - std_lin)/std_lin
+    print('criterion reduction: {:.0%}'.format(std_change))
+    
+    
+    
+    ### Alter the plot to keep only the  P_prod/P_grid axes
+#    fig.delaxes(ax2); fig.delaxes(ax3)
+#    fig.set_size_inches(10,2.5, forward=True)
+#    ax1.change_geometry(1,1,1) # update the subplot layout -> very important !
+#    ax1.label_outer()
+#    ax1.set_xlabel('time (s)')
+#    
+    ### Alter the plot to keep only P_prod/P_grid and E_sto
+#    fig.set_size_inches(6,4, forward=True)
+#    fig.delaxes(ax2);
+#    ax1.change_geometry(2,1,1)
+#    ax3.change_geometry(2,1,2)
+    
+    fig.tight_layout()
+    plt.draw()
