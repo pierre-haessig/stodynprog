@@ -36,8 +36,8 @@ def _enforce_sig_len(fun, args, shortname=None):
         err_msg = ''
         if shortname is not None:
             err_msg += shortname
-        err_msg += " '{:s}' ".format(fun.__name__)
-        err_msg += 'should accept {:d} args ({:s}), not {:d}.'.format(
+        err_msg += "'{:s}' ".format(fun.__name__)
+        err_msg += 'should accept {:d} args ({:s}), not {:d}'.format(
                     len(args), ', '.join(args), len(fun_args))
         raise ValueError(err_msg)
     else:
