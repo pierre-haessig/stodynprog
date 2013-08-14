@@ -12,6 +12,7 @@ Pierre Haessig — July 2013
 from __future__ import division, print_function, unicode_literals
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 from searev_data import load, searev_power, dt
 try:
@@ -99,7 +100,7 @@ def plot_trajectories(t, P_prod, P_sto, P_grid, E_sto):
     '''
     t_x = np.arange(len(t)+1)*dt
     
-    fig = plt.figure('trajectories', figsize=(6,6))
+    fig = plt.figure('trajectories', figsize=(10,6))
     # Create the suplots:
     if len(fig.axes) != 3:
         fig .clear()
@@ -148,6 +149,7 @@ def plot_trajectories(t, P_prod, P_sto, P_grid, E_sto):
     return fig
 
 if __name__ == '__main__':
+    mpl.rcParams['grid.color'] = (0.66,0.66,0.66, 0.4)
     ### Load time series:
     fname = 'Em_1.txt'
     t, elev, angle, speed, torque, accel = load(fname)
@@ -158,6 +160,20 @@ if __name__ == '__main__':
     print('With linear storage management')
     std_lin = P_grid.std()
     print('P_grid std: {:.3f}'.format(std_lin))   
+    
+    
+    # Make a tiny plot P_prod, P_grid to illustrate power smoothing
+    # (used in EuroSciPy article)
+    plt.figure('power smoothing', figsize=(6,2.5))
+    plt.subplot(111, title='Power smoothing by a linear control law',
+                     xlabel='time (s)', ylabel='Power (MW)')
+    plt.plot(t, P_prod, color=c['red'], label='$P_{prod}$')
+    plt.plot(t, P_grid, color=c['dark blue'], label='$P_{grid}$')
+    plt.xlim(230, 330) # zoom in time
+    plt.ylim(0, 1.2)
+    plt.legend(loc='upper right', prop={'size':10})
+    plt.title('') # remove title for PDF
+    plt.tight_layout()
     
     
     # Plot the trajectories
