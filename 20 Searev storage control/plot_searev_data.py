@@ -13,6 +13,7 @@ Pierre Haessig — April 2013
 from __future__ import division, print_function, unicode_literals
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 
 from searev_data import load, damp, torque_law
 
@@ -26,6 +27,11 @@ print('mean power: %.3f MW' % power.mean())
 print('speed std: %.3f m/s' % speed.std())
 
 ### Plot #######################################################################
+mpl.rcParams['grid.color'] = (0.66,0.66,0.66)
+mpl.rcParams['grid.alpha'] = 0.4
+mpl.rcParams['font.size'] = 10
+mpl.rcParams['savefig.dpi'] = 150
+
 
 fill_alpha = 0.2
 
@@ -62,16 +68,16 @@ fig.tight_layout()
 
 ### 2) Speed/Power time-series with histogram:
 fig = plt.figure('speed and power', figsize=(10,4))
-#fig.suptitle('Speed & Power from a 1000 s simulation of the Searev')
+fig.suptitle('Speed & Power from a 1000 s simulation of the Searev')
 fig.subplots_adjust(bottom=0.09, top=0.99)
 
 from matplotlib.gridspec import GridSpec
 gs_time = GridSpec(2, 1)
 gs_time.update( left=0.07, right=0.50, hspace=0.05)
 gs_timez = GridSpec(2, 1)
-gs_timez.update(left=0.51, right=0.79, hspace=0.05)
+gs_timez.update(left=0.51, right=0.84, hspace=0.05)
 gs_hist = GridSpec(2, 1)
-gs_hist.update( left=0.80, right=0.95, hspace=0.05)
+gs_hist.update( left=0.85, right=0.95, hspace=0.05)
 
 
 # 1. Speed
@@ -116,8 +122,21 @@ ax2h.set_xlim(0, ax2h.get_xlim()[1]*1.05)
 
 ax2t.set_ylim(0, 1.2)
 
-ax2tz.set_xlim(460,520) # zoomed region
+# set the zoomed region
+tmin, tmax = 230,300 # (70 seconds)
+ax2tz.set_xlim(tmin, tmax)
 
+# Highlight the zoomed region in the unzoomed plot:
+recSpeed = mpl.patches.Rectangle((tmin,-2), tmax-tmin, 4,
+                                 ls='solid', lw=0.5,
+                                 edgecolor=(0.5,)*3, facecolor=(0.9,)*3)
+    
+ax1t.add_patch(recSpeed)
+recPower = mpl.patches.Rectangle((tmin,-1), tmax-tmin, 3,
+                                 ls='solid', lw=0.5,
+                                 edgecolor=(0.5,)*3, facecolor=(0.9,)*3)
+    
+ax2t.add_patch(recPower)
 
 # Remove extremal ticks:
 ax1t.yaxis.get_major_locator().set_params(prune='both') # extremal speed ticks
