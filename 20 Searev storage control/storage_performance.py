@@ -102,4 +102,33 @@ for i,fname in enumerate(datafiles):
              verticalalignment='center')
 
 plt.tight_layout()
+
+
+### Plot same data, with bars ##################################################
+plt.figure('bars', figsize=(5.5,3.5))
+
+N = len(datafiles)
+w = 0.2 # bar width
+x = np.arange(N)
+colors = ["#4096A0", # blue green
+          "#5782E2", # blue 
+          "#3EA37C"] # green
+
+for i, fname in enumerate(datafiles):
+    plt.bar(x + w*i, s[i], w, color=colors[i], ec=(0.2,)*3)
+    
+plt.grid(False, axis='x')
+plt.grid(True, axis='y', ls='solid', c=(0.0,)*3, alpha=0.2)
+plt.title('Benefits of storage control optimization')
+plt.xticks(x+w*N/2, ['no storage',
+                     'linear\ncontrol',
+                     'optimized\ncontrol'])
+plt.xlim(0-1.5*w, 2+1.5*w+N*w)
+plt.ylabel('$P_{grid}$ standard deviation (MW)')
+
+plt.legend(datafiles, title='data sample', prop={'size':11})
+
+plt.tight_layout()
+
+
 plt.show()
