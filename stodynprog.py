@@ -75,7 +75,7 @@ class SysDescription(object):
         self._dyn_args = self.state + self.control + self.perturb
         if not self.stationnary:
             # for unstationnary systems, instant `k` must be provided as 1st argument
-            self._dyn_args.insert(0, 'k')
+            self._dyn_args.insert(0, 'time_k')
         
         # Dynamics and Cost functions (to be set separately)
         self._dyn = None
@@ -128,9 +128,9 @@ class SysDescription(object):
     def control_box(self, control_box):
         '''sets the control description function'''
         # Check the signature length:
-        args =  self.state
+        args =  list(self.state)
         if not self.stationnary:
-            args.insert(0, 'k')
+            args.insert(0, 'time_k')
         if _enforce_sig_len(control_box, args, 'control description function'):
             self._control_box = control_box
     
@@ -413,11 +413,13 @@ class DPSolver(object):
                                       ' is not implemented.')
     # end interp_on_state()
     
-    def control_grids(self, state_k):
+    def control_grids(self, state_k, t_k=None):
         '''returns u1_range, u2_range which is a grid on the box
         of admissible controls using self.control_steps as hints
         '''
         # 1) Evaluate the admissible box:
+        if t_k is not None:
+            state_k = (t_k,) + state_k
         intervals = self.sys.control_box(*state_k)
         
         # 2) Build the dicretization grid for each control:
@@ -514,6 +516,63 @@ class DPSolver(object):
         return J_k, pol_k
     # end solve_step
     
+    def bellman_recursion(self, t_fin, J_fin, t_ini=0, report_time=True):
+        '''solve Bellman backward recursion (applicable to
+        *finite horizon problems*)
+        for a given time range: starting from `t_fin` (positive int.)
+        to `t_ini` (defaults to zero).
+        
+        Supports non-stationnary problems.
+        
+        Returns
+        (J_k, pol_k)
+        '''
+        t_start = datetime.now()
+        
+        state_dims = tuple(len(grid) for grid in self.state_grid)
+        # number of control variables
+        nb_control = len(self.sys.control)
+        
+        stationnary = self.sys.stationnary
+        print('time-dependent problem: {:s}'.format('no' if stationnary else 'yes'))
+        
+        # Initialize the output arrays
+        assert t_ini == 0 # t_ini > 0 not tested
+        J   = np.zeros((t_fin-t_ini,) + state_dims)
+        pol = np.zeros((t_fin-t_ini,) + state_dims + (nb_control,) )
+        
+        if report_time: print('bellman recursion...', end='')
+        
+        # backward time iteration:
+        for t_k in range(t_ini, t_fin)[::-1]:
+            # Report progress:
+            print('\rtk = {:3d}...'.format(t_k), end='')
+            # take the time slice
+            k = t_k-t_ini
+            J_k = J[k]
+            pol_k = pol[k]
+            
+            # Interpolating function of the cost-to-go
+            J_next_interp = self.interp_on_state(J_fin) if t_k == (t_fin-1) else \
+                            self.interp_on_state(J[k+1])
+            
+            # Iterator over the state grid:
+            state_grid = itertools.product(*self.state_grid)
+            state_ind = itertools.product(*[range(d) for d in state_dims])
+            
+            # Loop over the state grid
+            for ind_x, x_k in itertools.izip(state_ind, state_grid):
+                J_xk_opt, u_xk_opt = self._value_at_state_vect(x_k, J_next_interp, t_k)
+                # Save the optimal value:
+                J_k[ind_x] = J_xk_opt
+                pol_k[ind_x] = u_xk_opt
+            # end for each state value
+        
+        exec_time = (datetime.now() - t_start).total_seconds()
+        if report_time: print('\rvalue iteration run in {:.2f} s'.format(exec_time))
+
+        return J, pol
+    
     #@profile
     def _value_at_state_loop(self, x_k, J_next_interp):
         '''find the optimal cost J_k and optimal control u_k
@@ -559,7 +618,7 @@ class DPSolver(object):
     # end _value_at_state_loop()
     
     #@profile
-    def _value_at_state_vect(self, x_k, J_next_interp):
+    def _value_at_state_vect(self, x_k, J_next_interp, t_k=None):
         '''find the optimal cost J_k and optimal control u_k
         at a given state point `x_k`
         
@@ -571,7 +630,7 @@ class DPSolver(object):
         Returns (J_xk_opt, u_xk_opt)
         '''
         # Compute the allowed control grid (depends on the state)
-        u_grids, control_dims = self.control_grids(x_k)
+        u_grids, control_dims = self.control_grids(x_k, t_k)
         nb_control = len(u_grids)
         
         # Reshape the control grids to enable broadcasted operations:
@@ -582,20 +641,27 @@ class DPSolver(object):
             # inplace reshape:
             u_grids[i].shape = shape
         
-        # grab the 1D perturbation vector
-        w_k = self.perturb_grid[0]
-        w_proba = self.perturb_proba[0]
-        # TODO : implement nD perturbation
+        nb_perturb = len(self.perturb_grid)
+        if nb_perturb > 0:
+            # grab the 1D perturbation vector
+            w_proba = self.perturb_proba[0]
+            # TODO : implement nD perturbation
         
-        args = x_k + tuple(u_grids) + (w_k,)
+        args = x_k + tuple(u_grids) + tuple(self.perturb_grid)
+        if t_k is not None:
+            # prepend the time argument for non-stationnary problems:
+            args = (t_k,) + args
         # Compute a grid of next steps:
         x_next = self.sys.dyn(*args)
         # Compute a grid of costs:
         g_k_grid = self.sys.cost(*args) # instant cost
         J_k_grid = g_k_grid + J_next_interp(*x_next) # add the cost-to-go
         # Expected (weighted mean) cost:
-        J = np.inner(J_k_grid, w_proba) # shape dim_control
-        assert J.shape == control_dims
+        if nb_perturb == 0:
+            J = J_k_grid
+        elif nb_perturb == 1:
+            J = np.inner(J_k_grid, w_proba) # shape dim_control
+            assert J.shape == control_dims
         
         # Find the lowest cost in array J:
         ind_opt = np.unravel_index(J.argmin(),control_dims)
@@ -741,22 +807,24 @@ class DPSolver(object):
                 print('  - {:s} fixed at {:g}'.format(self.sys.state[i], grid[0]))
         
         # b) Perturbation discretization:
-        grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grid])
-        print('* perturbation discretized on a {:s} points grid'.format(grid_size))
-        for i, grid in enumerate(self.perturb_grid):
-            if len(grid) > 1:
-                step = grid[1] - grid[0]
-                print('  - Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
-            else: # len(grid) == 1
-                print('  - {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
+        if self.sys.stochastic:
+            grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grid])
+            print('* perturbation discretized on a {:s} points grid'.format(grid_size))
+            for i, grid in enumerate(self.perturb_grid):
+                if len(grid) > 1:
+                    step = grid[1] - grid[0]
+                    print('  - Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
+                else: # len(grid) == 1
+                    print('  - {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
         
         # c) Control discretization
         # Compute the average number of control points:
         control_dims_list = []
+        t_k = None if self.sys.stationnary else 0
         if self.sys.control_box is not None:
             for x_k in itertools.product(*self.state_grid):
                 # Compute the control grid dimension for each state
-                _, control_dims = self.control_grids(x_k)
+                _, control_dims = self.control_grids(x_k, t_k)
                 control_dims_list.append(control_dims)
             # Convert list to 2D array for easy stats:
             cdim = np.array(control_dims_list)
