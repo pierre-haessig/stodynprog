@@ -1,4 +1,3 @@
-==========
 StoDynProg
 ==========
 
@@ -17,3 +16,20 @@ Source code is available at https://github.com/pierre-haessig/stodynprog
 
 The source tree contains interpolation code from the dolo project by Pablo Winant
 (https://github.com/albop/dolo).
+
+Usage
+-----
+
+First a few Cython files must be compiled.
+For testing, it's easier to build them *"inplace"*:
+
+    $ make inplace
+
+
+Then, the path to the code repositery can be added to the `$PYTHONPATH` variable.
+For examples, the following lines can be added to the `~/.bashrc` file (for Linux users).
+
+```bash
+# Add stodynprog to the PYTHONPATH
+export PYTHONPATH='/path/to/stodynpro/git-repositery':$PYTHONPATH
+```
