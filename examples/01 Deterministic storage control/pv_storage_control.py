@@ -24,7 +24,7 @@ mpl.rcParams['image.aspect'] = 'auto'
 try:
     from stodynprog import SysDescription, DPSolver
 except ImportError:
-    sys.path.append('..')
+    sys.path.append('../..')
     from stodynprog import SysDescription, DPSolver
 
 
