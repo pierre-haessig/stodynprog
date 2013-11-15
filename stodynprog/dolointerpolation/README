@@ -1,0 +1,10 @@
+The files:
+
+* multilinear.py
+* multilinear_cython.pyx
+
+come from the dolo project by Pablo Winant.
+
+Copyright for this code belongs to Pablo Winant.
+As can be seen from https://github.com/albop/dolo/blob/master/LICENSE,
+the dolo project code is BSD licensed.

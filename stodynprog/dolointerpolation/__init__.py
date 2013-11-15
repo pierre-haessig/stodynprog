@@ -1,6 +1,4 @@
-__author__ = 'pablo'
-__version__ = '0.0.1'
-
+'''Multilinear interpolation routine by Pablo Winant
+'''
 from multilinear import MultilinearInterpolator
-#from splines import MultivariateSplines
-#from smolyak import SmolyakGrid
+from multilinear_cython import multilinear_interpolation

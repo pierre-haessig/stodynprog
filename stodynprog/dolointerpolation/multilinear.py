@@ -17,14 +17,7 @@ def mlinspace(smin,smax,orders):
         res = np.atleast_2d( np.linspace(np.array(smin),np.array(smax),np.array(orders)) )
         return res.copy() ## workaround for strange bug
     else:
-        meshes = [np.linspace(smin[i],smax[i],orders[i]) for i in range(len(orders))]
-        for i,m in enumerate(meshes):
-            shape = [1]*len(orders)
-            shape[i] = -1
-            meshes[i] = m.reshape(shape)
-        meshes = np.broadcast_arrays(*meshes)
-        # Original version, requires NumPy 1.7 :
-        # meshes = np.meshgrid( *[numpy.linspace(smin[i],smax[i],orders[i]) for i in range(len(orders))], indexing='ij' )
+        meshes = np.meshgrid( *[numpy.linspace(smin[i],smax[i],orders[i]) for i in range(len(orders))], indexing='ij' )
         return np.row_stack( [l.flatten() for l in meshes])
 
 class MultilinearInterpolator:
