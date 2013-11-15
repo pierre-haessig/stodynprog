@@ -9,25 +9,20 @@ from __future__ import division, print_function, unicode_literals
 
 from nose.tools import assert_equal, assert_true, assert_raises
 
-import sys
-try:
-    import stodynprog
-except ImportError:
-    sys.path.append('..')
-    import stodynprog
-
+import stodynprog
+from stodynprog.stodynprog import _zero_cost, _enforce_sig_len
 
 def test_zero_cost():
     'test of the "zero cost" function'
-    assert_equal(stodynprog._zero_cost(), 0.)
-    assert_equal(stodynprog._zero_cost(1), 0.)
-    assert_equal(stodynprog._zero_cost(1,2), 0.)
-    assert_equal(stodynprog._zero_cost(1,2,3), 0.)
+    assert_equal(_zero_cost(), 0.)
+    assert_equal(_zero_cost(1), 0.)
+    assert_equal(_zero_cost(1,2), 0.)
+    assert_equal(_zero_cost(1,2,3), 0.)
 
 def test_enforce_sig_len():
     "function's  signature length enforcement"
     # shorthand name:
-    enforce_sig_len = stodynprog._enforce_sig_len
+    enforce_sig_len = _enforce_sig_len
     # Create some functions to check
     def f0():
         pass
