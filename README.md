@@ -31,5 +31,9 @@ For examples, the following lines can be added to the `~/.bashrc` file (for Linu
 
 ```bash
 # Add stodynprog to the PYTHONPATH
-export PYTHONPATH='/path/to/stodynpro/git-repositery':$PYTHONPATH
+export PYTHONPATH='/path/to/stodynprog/git-repositery':$PYTHONPATH
 ```
+
+To see if the code is properly running, run the tests (requires `nose`):
+
+    $ make test
