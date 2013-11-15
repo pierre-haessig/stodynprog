@@ -11,12 +11,22 @@ clean:
 	$(PYTHON) setup.py clean
 	rm -rf dist
 
-in: inplace # just a shortcut
+
+in: inplace
+
 inplace:
 	$(PYTHON) setup.py build_ext --inplace
 
-#test-code: in
-#	$(NOSETESTS) -s -v sklearn
+
+test: test-code
+
+test-code: inplace
+	$(NOSETESTS) -v stodynprog
+
+
+doc: inplace
+	make -C doc html
+
 #test-doc:
 #	$(NOSETESTS) -s -v doc/ doc/modules/ doc/datasets/ \
 #	doc/developers doc/tutorial/basic doc/tutorial/statistical_inference
@@ -25,8 +35,6 @@ inplace:
 #	rm -rf coverage .coverage
 #	$(NOSETESTS) -s -v --with-coverage sklearn
 
-#test: test-code test-doc
-
 #trailing-spaces:
 #	find sklearn -name "*.py" | xargs perl -pi -e 's/[ \t]*$$//'
 
@@ -34,8 +42,7 @@ inplace:
 #	find sklearn -name "*.pyx" | xargs $(CYTHON)
 
 
-#doc: inplace
-#	make -C doc html
+
 
 #doc-noplot: inplace
 #	make -C doc html-noplot
