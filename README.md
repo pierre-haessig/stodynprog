@@ -34,6 +34,20 @@ For examples, the following lines can be added to the `~/.bashrc` file (for Linu
 export PYTHONPATH='/path/to/stodynprog/git-repositery':$PYTHONPATH
 ```
 
+other option is to manipulate the `$PYTHONPATH` by creating a
+[path configuration file](http://stackoverflow.com/questions/3402168/permanently-add-a-directory-to-pythonpath#answer-12311321) that python loads always at start up:
+
+```bash
+# find the configuration directory
+SITEDIR=$(python -m site --user-site)
+
+# create if it doesn't exist
+mkdir -p $SITEDIR
+
+# create new .pth file with our path
+echo "/path/to/stodynprog/git-repositery" > $SITEDIR/stodynprog.pth
+```
+
 To see if the code is properly running, run the tests (requires `nose`):
 
     $ make test

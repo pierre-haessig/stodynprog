@@ -73,7 +73,7 @@ def admissible_controls(k, E_sto):
     return (U1, )
 
 def cost_model(k, E_sto, P_sto):
-    '''penalty on the variation of the power injected to the grid
+    '''penalty on the power injected to the grid
     P_grid = P_prod - P_sto
     '''
     P_prod = P_prod_data[k]
