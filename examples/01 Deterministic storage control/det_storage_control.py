@@ -14,7 +14,7 @@ from stodynprog import SysDescription, DPSolver
 
 ### Parameters of the problems:
 p = {
-'E_rated': 10., # [MWh]
+'E_rated': 5., # [MWh]
 'P_rated': 4., # [MW]
 'P_req_std': 1., # [MW]
 'P_req_data': []
@@ -26,11 +26,12 @@ dt = 1 # [h]
 
 print('Storage ratings: {:.2f} MWh'.format(p['E_rated']))
 
-T_horiz = 1000
+T_horiz = 7*24#1464
 
 ## Generate the input:
 print('generate P_req data: gaussian white noise with std={:.2f}'.format(p['P_req_std']))
 
+np.random.seed(2)
 def generate_input():
     p['P_req_data'] = np.random.normal(0, p['P_req_std'], size=T_horiz)
 generate_input()
@@ -108,8 +109,6 @@ if __name__ == '__main__':
     print('  effect of SoE(0): {:.2%}'.format((J_l2_full- J_l2_empty)/J_l2_empty
     ))
 
-
-
     pol_sto = pol[..., 0]
 
 
@@ -161,3 +160,15 @@ if __name__ == '__main__':
     ax[1].plot(k_range_x, E_empty, 'D-', color='orange', label='empty')
 
     plt.show()
+    
+#    ## Enhanced plot: (using AR1 SDP optim)
+#    import sys
+#    sys.path.append('/home/pierre/Travail eolien/31 Programmes divers/40 dynamic programming/personal examples/10 AR1 storage control')
+#    from ar1_storage_plot import _plot_trajectory
+#    SoE = E/p['E_rated']
+#    t = k_range/24
+#    fig = _plot_trajectory(t, SoE[:-1], p['P_req_data'], P_sto,
+#                          p['E_rated'], p['P_req_std'], draw_steps=True,
+#                          figname='trajectory')
+#    fig.savefig('traj_emp_E{:.1f}.pdf'.format(p['E_rated']))
+#    fig.savefig('traj_emp_E{:.1f}.png'.format(p['E_rated']))
