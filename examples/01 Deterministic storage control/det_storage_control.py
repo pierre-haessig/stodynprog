@@ -170,5 +170,5 @@ if __name__ == '__main__':
 #    fig = _plot_trajectory(t, SoE[:-1], p['P_req_data'], P_sto,
 #                          p['E_rated'], p['P_req_std'], draw_steps=True,
 #                          figname='trajectory')
-#    fig.savefig('traj_emp_E{:.1f}.pdf'.format(p['E_rated']))
-#    fig.savefig('traj_emp_E{:.1f}.png'.format(p['E_rated']))
+#    fig.savefig('traj_det_E{:.1f}.pdf'.format(p['E_rated']))
+#    fig.savefig('traj_det_E{:.1f}.png'.format(p['E_rated']))
