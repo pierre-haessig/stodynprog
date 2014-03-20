@@ -36,25 +36,34 @@ def test_enforce_sig_len():
     arg1 = ['x']
     arg2 = ['x','y']
     
+    # Functions without extra parameters
+    with_params = False
     # f0 should accept 0 argument:
-    assert_true(enforce_sig_len(f0, arg0))
-    assert_raises(ValueError, enforce_sig_len, f0, arg1)
-    assert_raises(ValueError, enforce_sig_len, f0, arg2)
+    assert_true(enforce_sig_len(f0, arg0, with_params))
+    assert_raises(ValueError, enforce_sig_len, f0, arg1, with_params)
+    assert_raises(ValueError, enforce_sig_len, f0, arg2, with_params)
     # f1 should accept 1 argument:
-    assert_raises(ValueError, enforce_sig_len, f1, arg0)
-    assert_true(enforce_sig_len(f1, arg1))
-    assert_raises(ValueError, enforce_sig_len, f1, arg2)
+    assert_raises(ValueError, enforce_sig_len, f1, arg0, with_params)
+    assert_true(enforce_sig_len(f1, arg1, with_params))
+    assert_raises(ValueError, enforce_sig_len, f1, arg2, with_params)
     # f2 should accept 2 arguments:
-    assert_raises(ValueError, enforce_sig_len, f1, arg0)
-    assert_raises(ValueError, enforce_sig_len, f2, arg1)
-    assert_true(enforce_sig_len(f2, arg2))
+    assert_raises(ValueError, enforce_sig_len, f1, arg0, with_params)
+    assert_raises(ValueError, enforce_sig_len, f2, arg1, with_params)
+    assert_true(enforce_sig_len(f2, arg2, with_params))
     # Finally, check the error message
     try:
-        enforce_sig_len(f1, arg2)
+        enforce_sig_len(f1, arg2, with_params)
     except ValueError as e:
         pass
     assert_equal(e.message, "'f1' should accept 2 args (x, y), not 1")
 
+    # functions with extra parameters:
+    def f1p(x, **params):
+        pass
+    assert_true(enforce_sig_len(f1p, arg1, with_params=True))
+    assert_raises(ValueError, enforce_sig_len, f1p, arg1, with_params=False)
+    assert_raises(ValueError, enforce_sig_len, f1, arg1, with_params=True)
+    
 ### test of SysDescription class ###############################################
 
 class testSysDescription:

@@ -21,7 +21,7 @@ def _zero_cost(*x):
     return 0.
 
 
-def _enforce_sig_len(fun, args, shortname=None):
+def _enforce_sig_len(fun, args, with_params, shortname=None):
     ''' Enforces the signature length of `fun` to match `args`
     
     Checks that function `fun` indeed accepts len(`args`) arguments,
@@ -30,22 +30,31 @@ def _enforce_sig_len(fun, args, shortname=None):
     prepend fun.__name__
     '''
     fun_args = inspect.getargspec(fun).args
+    kw_args = inspect.getargspec(fun).keywords
+    
+    err_msg = ''
+    if shortname is not None:
+        err_msg += shortname
+    err_msg += "'{:s}' ".format(fun.__name__)
+    
     if not len(fun_args) == len(args):
         # Build an error message of the kind
         # "dynamics function 'dyn_sto' should accept 3 args (x1, u1, w1), not 4."
-        err_msg = ''
-        if shortname is not None:
-            err_msg += shortname
-        err_msg += "'{:s}' ".format(fun.__name__)
         err_msg += 'should accept {:d} args ({:s}), not {:d}'.format(
                     len(args), ', '.join(args), len(fun_args))
+        raise ValueError(err_msg)
+    if with_params and kw_args is None:
+        err_msg += 'should accept extra keyword arguments'
+        raise ValueError(err_msg)
+    if not with_params and kw_args is not None:
+        err_msg += 'should not accept extra keyword arguments'
         raise ValueError(err_msg)
     else:
         return True
 # end _enforce_sig_len
 
 class SysDescription(object):
-    def __init__(self, dims, stationnary=True, name=''):
+    def __init__(self, dims, stationnary=True, name='', params=None):
         '''Description of a Dynamical System in the view of optimal (stochastic)
         control, using Dynamic Programming approach.
         
@@ -58,6 +67,10 @@ class SysDescription(object):
         '''
         self.name = name
         self.stationnary = bool(stationnary)
+        if params is not None:
+            self.params = params
+        else:
+            self.params = {}
         
         if len(dims) == 3:
             dim_state, dim_control, dim_perturb = dims
@@ -99,7 +112,8 @@ class SysDescription(object):
     def dyn(self, dyn):
         '''sets the dynamics function'''
         # Check the signature length:
-        if _enforce_sig_len(dyn, self._dyn_args, 'dynamics function'):
+        with_params = bool(self.params)
+        if _enforce_sig_len(dyn, self._dyn_args, with_params, 'dynamics function'):
             self._dyn = dyn
         
         # Read the variable names from the signature of `dyn`
@@ -131,7 +145,8 @@ class SysDescription(object):
         args =  list(self.state)
         if not self.stationnary:
             args.insert(0, 'time_k')
-        if _enforce_sig_len(control_box, args, 'control description function'):
+        with_params = bool(self.params)
+        if _enforce_sig_len(control_box, args, with_params, 'control description function'):
             self._control_box = control_box
     
     @property
@@ -143,7 +158,8 @@ class SysDescription(object):
     def cost(self, cost):
         '''sets the cost function'''
         # Check the signature length:
-        if _enforce_sig_len(cost, self._dyn_args, 'cost function'):
+        with_params = bool(self.params)
+        if _enforce_sig_len(cost, self._dyn_args, with_params, 'cost function'):
             self._cost = cost
     
     @property
@@ -420,7 +436,8 @@ class DPSolver(object):
         # 1) Evaluate the admissible box:
         if t_k is not None:
             state_k = (t_k,) + state_k
-        intervals = self.sys.control_box(*state_k)
+        sys_params = self.sys.params
+        intervals = self.sys.control_box(*state_k, **sys_params)
         
         # 2) Build the dicretization grid for each control:
         control_grids = []
@@ -597,13 +614,14 @@ class DPSolver(object):
         # TODO : implement an nD perturbation
         
         # Iterate over all possible controls:
+        sys_params = self.sys.params
         for u_xk in itertools.product(*u_grids):
             ### Compute the expected cost of control u_xk ###
             args = x_k + u_xk + (w_k,)
             # Compute a grid of next steps:
-            x_next = self.sys.dyn(*args)
+            x_next = self.sys.dyn(*args, **sys_params)
             # Compute a grid of costs:
-            J_k_grid = self.sys.cost(*args) # instant cost
+            J_k_grid = self.sys.cost(*args, **sys_params) # instant cost
             J_k_grid += J_next_interp(*x_next) # add the cost-to-go
             # Expected (weighted mean) cost:
             J = np.inner(J_k_grid, w_proba)
@@ -648,13 +666,14 @@ class DPSolver(object):
             # TODO : implement nD perturbation
         
         args = x_k + tuple(u_grids) + tuple(self.perturb_grid)
+        sys_params = self.sys.params
         if t_k is not None:
             # prepend the time argument for non-stationnary problems:
             args = (t_k,) + args
         # Compute a grid of next steps:
-        x_next = self.sys.dyn(*args)
+        x_next = self.sys.dyn(*args, **sys_params)
         # Compute a grid of costs:
-        g_k_grid = self.sys.cost(*args) # instant cost
+        g_k_grid = self.sys.cost(*args, **sys_params) # instant cost
         J_k_grid = g_k_grid + J_next_interp(*x_next) # add the cost-to-go
         # Expected (weighted mean) cost:
         if nb_perturb == 0:
@@ -720,6 +739,7 @@ class DPSolver(object):
         state_grid = tuple(state_grid)
         
         # Loop over instants
+        sys_params = self.sys.params
         for k in range(n_iter):
             print('\rpolicy evaluation: iter. {:d}/{:d}'.format(k,n_iter), end='')
              # Interpolate the cost-to-go
@@ -729,9 +749,9 @@ class DPSolver(object):
                    for i in range(nb_control)] 
             args = state_grid + tuple(u_k) + (w_k,)
             # Compute a grid of next steps:
-            x_next = self.sys.dyn(*args)
+            x_next = self.sys.dyn(*args, **sys_params)
              # Compute a grid of costs:
-            g_k_grid = self.sys.cost(*args) # instant cost
+            g_k_grid = self.sys.cost(*args, **sys_params)# instant cost
             J_k_grid = g_k_grid + J_pol_interp(*x_next) # add the cost-to-go
             # Expected (weighted mean) cost:
             J_pol = np.inner(J_k_grid, w_proba)
