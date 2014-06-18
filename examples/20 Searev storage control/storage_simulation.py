@@ -15,12 +15,8 @@ import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 from searev_data import load, searev_power, dt
-try:
-    import stodynprog
-except ImportError:
-    import sys
-    sys.path.append('..')
-    import stodynprog
+
+import stodynprog
 
 # Storage rated energy and power:
 E_rated = 10 # [MJ]

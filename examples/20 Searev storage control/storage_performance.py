@@ -11,12 +11,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from searev_data import load, searev_power, dt, power_max
-try:
-    import stodynprog
-except ImportError:
-    import sys
-    sys.path.append('..')
-    import stodynprog
+
+import stodynprog
 
 from storage_simulation import storage_sim, P_sto_law_lin
 
@@ -52,9 +48,17 @@ for fname in datafiles:
     P_prod = speed*torque/1e6 # [MW]
 
     # Run two simulations:
-    _, P_grid_lin, _ = storage_sim(speed, accel, P_prod, P_sto_law_lin)
-    _, P_grid_opt, _ = storage_sim(speed, accel, P_prod, P_sto_law, check_bounds=False)
+    P_sto_lin, P_grid_lin, E_sto_lin = storage_sim(speed, accel, P_prod, P_sto_law_lin)
+    P_sto_opt, P_grid_opt, E_sto_opt = storage_sim(speed, accel, P_prod, P_sto_law, check_bounds=False)
     
+    # Save simulation data:
+    print('saving simulation data to "data_output"...')
+    csv_opt = dict(fmt = str('%.12f'), delimiter=',',
+                   header='P_sto,P_grid_lin,E_sto', comments='')
+    data = np.vstack((P_sto_lin, P_grid_lin, E_sto_lin[:-1])).T
+    np.savetxt('data_output/lin_smooth_'+fname, data, **csv_opt)
+    data = np.vstack((P_sto_opt, P_grid_opt, E_sto_opt[:-1])).T
+    np.savetxt('data_output/opt_smooth_'+fname, data, **csv_opt)
     
     std_nosto = P_prod.std()
     mse_nosto = cost(P_prod).mean()
