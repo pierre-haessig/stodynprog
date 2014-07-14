@@ -3,6 +3,8 @@
 """ Compute an optimal storage control policy
 supposing a perfect knowledge of the future inputs.
 
+If run as a script, simulate and plot the optimal trajectory.
+
 Pierre Haessig — November 2013
 """
 
@@ -10,31 +12,48 @@ from __future__ import division, print_function, unicode_literals
 import numpy as np
 
 from stodynprog import SysDescription, DPSolver
+from storagesim import AR1
+import itertools
 
 
 ### Parameters of the problems:
+
+dt = 1 # [h]
+
+# AR(1) process to generate input
+P_req_ar1 = AR1(0, scale = 1., # [MW]
+                corr = 0.8, # AR(1) correlation coeff.
+                n_sim=1)
+
 p = {
-'E_rated': 5., # [MWh]
-'P_rated': 4., # [MW]
-'P_req_std': 1., # [MW]
+'E_rated': 20., # [MWh]
+'P_rated': 4. * P_req_ar1.scale, # [MW]
 'P_req_data': []
 }
 
-## Storage dynamics description
-dt = 1 # [h]
-# Storage rated energy and power:
-
 print('Storage ratings: {:.2f} MWh'.format(p['E_rated']))
 
-T_horiz = 7*24#1464
+# Length of the optimization horizon:
+T_horiz = 14*24
+#T_horiz = 1464
 
 ## Generate the input:
-print('generate P_req data: gaussian white noise with std={:.2f}'.format(p['P_req_std']))
+print('generate P_req data:', end=' ')
+print('gaussian AR(1) noise with std={:.2f} and corr={:.2f}'.format(
+       P_req_ar1.scale, P_req_ar1.corr))
 
-np.random.seed(2)
-def generate_input():
-    p['P_req_data'] = np.random.normal(0, p['P_req_std'], size=T_horiz)
-generate_input()
+
+def generate_input(seed):
+    '''fill p['P_req_data'] with an AR(1) sample'''
+    P_req_ar1.seed = seed
+    P_req_ar1.restart()
+    # generate samples:
+    P_req = list(itertools.islice(P_req_ar1, T_horiz))
+    # reshape to a flat 1D array:
+    P_req = np.array(P_req).reshape(-1)
+    p['P_req_data'] = P_req
+
+generate_input(seed=2)
 
 def dyn_sto(k, E_sto, P_sto):
     '''state transition of the "deterministic storage" system
@@ -84,7 +103,7 @@ sto_sys.print_summary()
 ### Create the DP solver:
 dpsolv = DPSolver(sto_sys)
 # discretize the state space
-N_E = 50
+N_E = 100
 
 E_grid = dpsolv.discretize_state(0, p['E_rated'], N_E)[0]
 dpsolv.control_steps=(.001,)
@@ -161,14 +180,16 @@ if __name__ == '__main__':
 
     plt.show()
     
-#    ## Enhanced plot: (using AR1 SDP optim)
-#    import sys
-#    sys.path.append('/home/pierre/Travail eolien/31 Programmes divers/40 dynamic programming/personal examples/10 AR1 storage control')
-#    from ar1_storage_plot import _plot_trajectory
-#    SoE = E/p['E_rated']
-#    t = k_range/24
-#    fig = _plot_trajectory(t, SoE[:-1], p['P_req_data'], P_sto,
-#                          p['E_rated'], p['P_req_std'], draw_steps=True,
-#                          figname='trajectory')
-#    fig.savefig('traj_det_E{:.1f}.pdf'.format(p['E_rated']))
-#    fig.savefig('traj_det_E{:.1f}.png'.format(p['E_rated']))
+    ## Enhanced plot: (using storagesim.plotting)
+    from storagesim.plotting import plot_trajectory, trajectory_params
+    
+    SoE = E/p['E_rated']
+    t = k_range/24.
+    trajectory_params['show_dev_stat'] = 'L2'
+    
+    fig = plot_trajectory(t, SoE[1:], p['P_req_data'], P_sto,
+                          pow_max = 3.5*P_req_ar1.scale,
+                          params = trajectory_params)
+    fig_fname = 'traj_det_E{:.1f}_corr{:.1f}'.format(p['E_rated'], P_req_ar1.corr)
+    fig.savefig(fig_fname + '.pdf')
+    fig.savefig(fig_fname + '.png', dpi=150)

@@ -1,6 +1,14 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 """ Assess the performance of the deterministic storage control:
+
+* for a range of storage capacities
+* repeat the optimization to collect meaninful performance statistics
+
+(running this script takes some hours)
+
+→ results used for SGE'2014 article
+
 Pierre Haessig — November 2013
 """
 
@@ -9,21 +17,22 @@ import numpy as np
 import matplotlib.pyplot as plt
 from multiprocessing import Pool
 
-from det_storage_control import p, generate_input, N_E, dpsolv, T_horiz
+from det_storage_control import p, generate_input, N_E, dpsolv, T_horiz, P_req_ar1
 
 J_fin = np.zeros(N_E)
 
 N_samples = 50
 
-E_rated_list = [0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 10.]
+E_rated_list = np.array([0.2, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 10.])*5
+P_req_ar1.corr = 0.8
 
-def compute_rms_deviation(E_rated):
+def compute_rms_deviation(E_rated, seed):
     print('E_rated = {:.1f}'.format(E_rated))
     p['E_rated'] = E_rated
     dpsolv.discretize_state(0, p['E_rated'], N_E)[0]
 
     # Generate a new random input:
-    generate_input()
+    generate_input(seed)
 
     # Solve the problem:
     J, pol = dpsolv.bellman_recursion(T_horiz, J_fin)
@@ -36,24 +45,24 @@ def compute_rms_deviation(E_rated):
 def compute_rms_deviation_list(n):
     print('\n**** Sample {:2d} ****'.format(n))
     rms = []
-    np.random.seed(n)
     for E_rated in E_rated_list:
-        rms.append(compute_rms_deviation(E_rated))
+        rms.append(compute_rms_deviation(E_rated, seed=n))
     return rms
 
 
 if __name__ == '__main__':
-    pool = Pool(8)
+    pool = Pool(2)
     rms_list = pool.map(compute_rms_deviation_list, range(N_samples), chunksize=1)
     print(rms_list)
     
     rms_list = np.array(rms_list).T
     
     ### Save computation:
-    np.savez('whitenoise_perf.npz', E_rated_list = E_rated_list,
-                                 rms_list = rms_list)
+    fname = 'anticip_perf_corr-{:.1f}.npz'.format(P_req_ar1.corr)
+    np.savez(fname, E_rated_list = E_rated_list,
+                    rms_list = rms_list)
     assert rms_list.shape == (len(E_rated_list), N_samples)
-    d = np.load('whitenoise_perf.npz')
+    #d = np.load(fname)
     
     rms_mean = np.sqrt(np.mean(rms_list**2, axis=1))
     rms_std = np.std(rms_list, axis=1)
