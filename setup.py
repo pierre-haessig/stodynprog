@@ -33,7 +33,7 @@ setup(
 
     description = 'a library for solving stochastic optimal control problems, also called dynamic optimization',
 
-    license = 'BSD-2',
+    license = 'BSD-3',
 
     url = 'https://github.com/pierre-haessig/stodynprog',
 
