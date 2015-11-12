@@ -42,7 +42,7 @@ This creates a `SysDescription` object for a problem with 1 state variable,
 
 >>> def dyn_inv(x, u, w):
 >>>     'dynamical equation of the inventory stock `x`. Returns x(k+1).'
->>>     return x + u - w
+>>>     return (x + u - w,) # tuple, to support several state variables
 >>> # Attach the dynamical equation to the system description:
 >>> invsys.dyn = dyn_inv
 
