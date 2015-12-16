@@ -43,14 +43,14 @@ class test_multilinear_interpolation:
 class testMultilinearInterpolator:
     'test the high-level `MultilinearInterpolator` class'
     def test_R2R2(self):
-        '''test interpolation with a ℝ² to ℝ² function'''
+        '''test interpolation with a R² to R² function'''
         smin = [1,1]
         smax = [2,2]
         orders = [5,5]
         def f(x):
             '''test function to interpolate
-            f: from ℝ² to ℝ²
-               x, y ⟼ √(x² + y²), ∛(x³ + y³)
+            f: from R² to R²
+               x, y -> √(x² + y²), ∛(x³ + y³)
             '''
             return np.row_stack([
                                  np.sqrt( x[0,:]**2 + x[1,:]**2 ),
