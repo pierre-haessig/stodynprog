@@ -1,5 +1,7 @@
 *~
 *.pyc
+*.pyd
 /build
 /dist
 /stodynprog.egg-info
+.ipynb_checkpoints
