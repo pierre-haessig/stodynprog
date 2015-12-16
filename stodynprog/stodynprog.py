@@ -8,7 +8,7 @@ to solve *simple* Optimal Stochastic Control problems
 classes : SysDescription, DPSolver
 """
 
-from __future__ import division, print_function, unicode_literals
+from __future__ import division, print_function, unicode_literals, absolute_import
 import numpy as np
 import matplotlib.pyplot as plt
 import inspect
@@ -250,7 +250,7 @@ class SysDescription(object):
 # Interpolation class
 # TODO : use a nicer n-dim method (like multilinear interpolation)
 from scipy.interpolate import RectBivariateSpline
-from dolointerpolation.multilinear_cython import multilinear_interpolation
+from stodynprog.dolointerpolation.multilinear_cython import multilinear_interpolation
 
 class MlinInterpolator:
     '''Multilinear interpolation class
