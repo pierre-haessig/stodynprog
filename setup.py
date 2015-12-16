@@ -2,12 +2,13 @@ from setuptools import setup
 from distutils.extension import Extension
 
 from Cython.Distutils import build_ext
+import numpy as np
 
 setup(
 
     name = "stodynprog",
     version = '0.1',
-    packages = ['stodynprog'],
+    packages = ['stodynprog', 'stodynprog.dolointerpolation', 'stodynprog.tests'],
 
     test_suite='stodynprog.tests',
 
@@ -21,6 +22,7 @@ setup(
         ),
 
     ],
+	include_dirs = [np.get_include()], #find numpy headers to build the Cython extension
 
     install_requires = ["numpy","scipy","cython"],
 
