@@ -23,7 +23,7 @@ def _zero_cost(*x):
 
 def _enforce_sig_len(fun, args, with_params, shortname=None):
     ''' Enforces the signature length of `fun` to match `args`
-    
+
     Checks that function `fun` indeed accepts len(`args`) arguments,
     raises ValueError othewise.
     Also `shortname` is used, if provided, in the error message to
@@ -31,12 +31,12 @@ def _enforce_sig_len(fun, args, with_params, shortname=None):
     '''
     fun_args = inspect.getargspec(fun).args
     kw_args = inspect.getargspec(fun).keywords
-    
+
     err_msg = ''
     if shortname is not None:
         err_msg += shortname
     err_msg += "'{:s}' ".format(fun.__name__)
-    
+
     if not len(fun_args) == len(args):
         # Build an error message of the kind
         # "dynamics function 'dyn_sto' should accept 3 args (x1, u1, w1), not 4."
@@ -57,11 +57,11 @@ class SysDescription(object):
     def __init__(self, dims, stationnary=True, name='', params=None):
         '''Description of a Dynamical System in the view of optimal (stochastic)
         control, using Dynamic Programming approach.
-        
+
         Each system basically has
          * a dynamics function x_{k+1} = f_k(x_k, u_k, w_k)
          * an instant cost function g_k(x_k, u_k, w_k)
-         
+
         The sum over instants of g_k is the total cost J which is to be minimized
         by choosing the control policy
         '''
@@ -71,7 +71,7 @@ class SysDescription(object):
             self.params = params
         else:
             self.params = {}
-        
+
         if len(dims) == 3:
             dim_state, dim_control, dim_perturb = dims
         elif len(dims) == 2:
@@ -79,35 +79,35 @@ class SysDescription(object):
             dim_perturb = 0
         else:
             raise ValueError('dims tuple should be of len 2 or 3')
-        
+
         self.state = ['x{:d}'.format(i+1) for i in range(dim_state)]
         self.control = ['u{:d}'.format(i+1) for i in range(dim_control)]
         self.perturb = ['w{:d}'.format(i+1) for i in range(dim_perturb)]
-        
+
         # Expected signature length of dyn and cost functions:
         self._dyn_args = self.state + self.control + self.perturb
         if not self.stationnary:
             # for unstationnary systems, instant `k` must be provided as 1st argument
             self._dyn_args.insert(0, 'time_k')
-        
+
         # Dynamics and Cost functions (to be set separately)
         self._dyn = None
         self._cost = None
         self._control_box = None
         self._terminal_cost = _zero_cost
         self._perturb_laws = None
-    
-    
+
+
     @property
     def stochastic(self):
         '''is the system stochastic or deterministic ?'''
         return len(self.perturb) > 0
-    
+
     @property
     def dyn(self):
         '''dynamics function x_{k+1} = f_k(x_k, u_k, w_k)'''
         return self._dyn
-    
+
     @dyn.setter
     def dyn(self, dyn):
         '''sets the dynamics function'''
@@ -115,7 +115,7 @@ class SysDescription(object):
         with_params = bool(self.params)
         if _enforce_sig_len(dyn, self._dyn_args, with_params, 'dynamics function'):
             self._dyn = dyn
-        
+
         # Read the variable names from the signature of `dyn`
         dyn_args = inspect.getargspec(dyn).args
         # Rewrite the internally stored signature
@@ -129,7 +129,7 @@ class SysDescription(object):
         self.control = dyn_args[0:len(self.control)]
         dyn_args = dyn_args[len(self.control):]  # drop control variables
         self.perturb = dyn_args[0:len(self.perturb)]
-    
+
     @property
     def control_box(self):
         '''control description function U_k(x_k), expressed as a box (Hyperrectangle)
@@ -137,7 +137,7 @@ class SysDescription(object):
         Cartesian product of intervals U = [u1_min, u1_max] x [u2_min, u2_max] x ...
         '''
         return self._control_box
-    
+
     @control_box.setter
     def control_box(self, control_box):
         '''sets the control description function'''
@@ -148,12 +148,12 @@ class SysDescription(object):
         with_params = bool(self.params)
         if _enforce_sig_len(control_box, args, with_params, 'control description function'):
             self._control_box = control_box
-    
+
     @property
     def cost(self):
         '''cost function g_k(x_k, u_k, w_k)'''
         return self._cost
-    
+
     @cost.setter
     def cost(self, cost):
         '''sets the cost function'''
@@ -161,12 +161,12 @@ class SysDescription(object):
         with_params = bool(self.params)
         if _enforce_sig_len(cost, self._dyn_args, with_params, 'cost function'):
             self._cost = cost
-    
+
     @property
     def terminal_cost(self):
         '''terminal cost function g(x_K)'''
         return self._terminal_cost
-    
+
     @terminal_cost.setter
     def terminal_cost(self, cost):
         '''sets the terminal cost function'''
@@ -182,7 +182,7 @@ class SysDescription(object):
     def perturb_laws(self):
         '''distribution laws of perturbations `w_k`'''
         return self._perturb_laws
-    
+
     @perturb_laws.setter
     def perturb_laws(self, laws):
         '''distribution laws of perturbations'''
@@ -205,7 +205,7 @@ class SysDescription(object):
                 except AttributeError:
                     raise ValueError('perturbation law {:s} should either have a pdf or a pmf method'.format(repr(l)))
             self.perturb_types.append(t)
-    
+
     def print_summary(self):
         '''summary information about the dynamical system'''
         print('Dynamical system "{}" description'.format(self.name))
@@ -213,7 +213,7 @@ class SysDescription(object):
         station = 'stationnary' if self.stationnary else 'time dependent'
         stoch = 'stochastic' if self.stochastic else 'deterministic'
         print('* behavioral properties: {}, {}'.format(station, stoch))
-        
+
         ### 2) info about functions:
         print('* functions:')
         funclist = [('dynamics', self.dyn),
@@ -227,7 +227,7 @@ class SysDescription(object):
                 fname = 'None (to be defined)'
             print('  - {0:{width}}: {1}'.format(name, fname, width=maxlen+1))
         # end for each function
-        
+
         ### 1) information about variables
         print('* variables')
         vectlist = [('state', self.state),
@@ -240,7 +240,7 @@ class SysDescription(object):
                         name,  ', '.join(vect), len(vect), width=maxlen+1 ))
         # end for each vector
     # end print_summary()
-    
+
     def __repr__(self):
         return '<SysDescription "{:s}" at 0x{:x}>'.format(self.name, id(self))
     # end __repr__()
@@ -255,7 +255,7 @@ from stodynprog.dolointerpolation.multilinear_cython import multilinear_interpol
 class MlinInterpolator:
     '''Multilinear interpolation class
     wrapping Pablo Winant's Cython interpolation routine
-    
+
     Note : API of this class is different from Pablo Winant's MultilinInterpolator
     '''
     def __init__(self, *x_grid):
@@ -263,17 +263,17 @@ class MlinInterpolator:
         self._xmin = np.array([x[0]  for x in x_grid])
         self._xmax = np.array([x[-1] for x in x_grid])
         self._xshape = np.array([len(x) for x in x_grid], dtype=np.int)
-        
+
         self.values = None
-        
+
     def set_values(self,values):
         assert values.ndim == self.ndim
         assert values.shape == tuple(self._xshape)
         self.values = np.ascontiguousarray(np.atleast_2d(values.ravel()))
-    
+
     def __call__(self, *x_interp):
         '''evaluate the interpolated function at coordinates `x_interp`
-        
+
         output shape is the shape of broadcasted coordinate inputs.
         '''
         assert len(x_interp) == self.ndim
@@ -317,9 +317,9 @@ class RectBivariateSplineBc(RectBivariateSpline):
 class DPSolver(object):
     def __init__(self, sys):
         '''Dynamic Programming solver for stochastic dynamic control of `sys`
-        
+
         The dynamical system `sys` should be a `SysDescription` object.
-        
+
         DPSolver implements Value Iteration and Policy Iteration.
         For the latter, policy evaluation is done by repeated value iterations.
         '''
@@ -331,15 +331,15 @@ class DPSolver(object):
         # steps for control discretization
         self.control_steps = (1.,)*len(self.sys.control)
     # end __init__()
-    
+
     def discretize_perturb(self, *linspace_args):
         '''create a regular discrete grid for each perturbation variable
-        
+
         grids are stored in `self.perturb_grid` and can also be set manually
         corresponding probability weights are in `self.perturb_proba`
         '''
         assert len(linspace_args) == len(self.sys.perturb)*3
-        
+
         self.perturb_grid = []
         self.perturb_proba = []
         for i in range(len(self.sys.perturb)):
@@ -357,37 +357,37 @@ class DPSolver(object):
 
             self.perturb_grid.append(grid_wi)
             self.perturb_proba.append(proba_wi)
-            
+
         return self.perturb_grid, self.perturb_proba
     # end discretize_perturb()
-    
+
     def discretize_state(self, *linspace_args):
         '''create a regular discrete grid for each state variable
-        
+
         grids are stored in `self.state_grid` and can also be set manually.
         '''
         assert len(linspace_args) == len(self.sys.state)*3
-        
+
         state_grid = []
         for i in range(len(self.sys.state)):
             # discrete grid for state `i`
             grid_xi = np.linspace(*linspace_args[i*3:i*3+3])
             state_grid.append(grid_xi)
         self.state_grid = state_grid
-        
+
         ### Store some additional data about the grid
         # shape of the grid:
         grid_shape = tuple(len(g) for g in self.state_grid)
         self._state_grid_shape = grid_shape
         # Reference indices (for relative DP algorithm)
         # -> take the "middle" of the grid
-        ref_ind = tuple(nx//2 for nx in grid_shape) 
+        ref_ind = tuple(nx//2 for nx in grid_shape)
         self._state_ref_ind = ref_ind
         self._state_ref = tuple(g[i] for g,i in zip(state_grid, ref_ind))
-        
+
         return self.state_grid
     # end discretize_state()
-    
+
     @property
     def state_grid_full(self):
         '''broadcasted state grid
@@ -399,13 +399,13 @@ class DPSolver(object):
             shape = [1]*state_dim
             shape[i] = -1
             state_grid.append(x_grid.reshape(shape))
-        
+
         return np.broadcast_arrays(*state_grid)
-    
+
     def interp_on_state(self, A):
         '''returns an interpolating function of matrix A, assuming that A
         is expressed on the state grid `self.state_grid`
-        
+
         the shape of A should be (len(g) for g in self.state_grid)
         '''
         # Check the dimension of A:
@@ -413,12 +413,12 @@ class DPSolver(object):
         if A.shape != expect_shape:
             raise ValueError('array `A` should be of shape {:s}, not {:s}'.format(
                              str(expect_shape), str(A.shape)) )
-        
+
         if len(expect_shape) <= 5:
             A_interp = MlinInterpolator(*self.state_grid)
             A_interp.set_values(A)
             return A_interp
-            
+
 #        if len(expect_shape) == 2:
 #            x1_grid = self.state_grid[0]
 #            x2_grid = self.state_grid[1]
@@ -428,7 +428,7 @@ class DPSolver(object):
             raise NotImplementedError('interpolation for state dimension >5'
                                       ' is not implemented.')
     # end interp_on_state()
-    
+
     def control_grids(self, state_k, t_k=None):
         '''returns u1_range, u2_range which is a grid on the box
         of admissible controls using self.control_steps as hints
@@ -438,14 +438,14 @@ class DPSolver(object):
             state_k = (t_k,) + state_k
         sys_params = self.sys.params
         intervals = self.sys.control_box(*state_k, **sys_params)
-        
+
         # 2) Build the dicretization grid for each control:
         control_grids = []
         control_dims = []
         for (u_min, u_max), step in zip(intervals, self.control_steps):
             width = u_max - u_min
             n_interv = width / step # gives the number of intervals (float)
-            
+
             if n_interv < 0.1:
                 # step size is much (10x) thinner than the admissible width,
                 # only keep one control point at the interval center :
@@ -461,14 +461,14 @@ class DPSolver(object):
         # end for each control
         return control_grids, tuple(control_dims)
     # end control_grids()
-    
+
     #@profile
     def value_iteration(self, J_next, rel_dp=False, report_time=True):
         '''solve one DP step on the entire state space grid,
         given and cost-to-go array `J_next` discretized over the state space grid.
-        
+
         If rel_dp is True, J_next should be a (J_next, J_ref) tuple
-        
+
         Returns
         (J_k, pol_k)
         and J_k is a tuple (J_diff, J_ref) if `rel_dp` is True
@@ -486,29 +486,29 @@ class DPSolver(object):
             # Check that the cost-to-go is indeed a *differential* cost
             # with a zero at the reference state
             assert J_next[ref_ind] == 0.
-        
+
         # number of control variables
         nb_control = len(self.sys.control)
-        
+
         # Initialize the output arrays
         J_k = np.zeros(state_dims)
         pol_k = np.zeros(state_dims + (nb_control,) )
-        
+
         # Interpolating function of the cost-to-go
         J_next_interp = self.interp_on_state(J_next)
-        
+
         # Loop over the state grid
         if report_time: print('value iteration...', end='')
-        
+
 #        # Attempt at doing parallel processing:
 #        from multiprocessing import Pool
 #        p = Pool(3)
-#        args = itertools.izip(state_grid,
+#        args = zip(state_grid,
 #                              itertools.repeat(J_next_interp) )
 #        out = p.imap(self._value_at_state_vect, args)
 #        out = np.fromiter(out, float)
 
-        for ind_x, x_k in itertools.izip(state_ind, state_grid):
+        for ind_x, x_k in zip(state_ind, state_grid):
             J_xk_opt, u_xk_opt = self._value_at_state_vect(x_k, J_next_interp)
             # Save the optimal value:
             J_k[ind_x] = J_xk_opt
@@ -518,48 +518,48 @@ class DPSolver(object):
 #                  np.ravel_multi_index(ind_x, state_dims) / np.product(state_dims) ),
 #                  end='')
         # end for each state value
-        
+
         # Relative DP:
         if rel_dp:
             J_ref = J_k[ref_ind]
             J_k -= J_ref
-        
+
         exec_time = (datetime.now() - t_start).total_seconds()
         if report_time: print('\rvalue iteration run in {:.2f} s'.format(exec_time))
-        
+
         if rel_dp:
             # pack together the differential and relative costs:
             J_k = J_k, J_ref
         return J_k, pol_k
     # end solve_step
-    
+
     def bellman_recursion(self, t_fin, J_fin, t_ini=0, report_time=True):
         '''solve Bellman backward recursion (applicable to
         *finite horizon problems*)
         for a given time range: starting from `t_fin` (positive int.)
         to `t_ini` (defaults to zero).
-        
+
         Supports non-stationnary problems.
-        
+
         Returns
         (J_k, pol_k)
         '''
         t_start = datetime.now()
-        
+
         state_dims = tuple(len(grid) for grid in self.state_grid)
         # number of control variables
         nb_control = len(self.sys.control)
-        
+
         stationnary = self.sys.stationnary
         print('time-dependent problem: {:s}'.format('no' if stationnary else 'yes'))
-        
+
         # Initialize the output arrays
         assert t_ini == 0 # t_ini > 0 not tested
         J   = np.zeros((t_fin-t_ini,) + state_dims)
         pol = np.zeros((t_fin-t_ini,) + state_dims + (nb_control,) )
-        
+
         if report_time: print('bellman recursion...', end='')
-        
+
         # backward time iteration:
         for t_k in range(t_ini, t_fin)[::-1]:
             # Report progress:
@@ -568,38 +568,38 @@ class DPSolver(object):
             k = t_k-t_ini
             J_k = J[k]
             pol_k = pol[k]
-            
+
             # Interpolating function of the cost-to-go
             J_next_interp = self.interp_on_state(J_fin) if t_k == (t_fin-1) else \
                             self.interp_on_state(J[k+1])
-            
+
             # Iterator over the state grid:
             state_grid = itertools.product(*self.state_grid)
             state_ind = itertools.product(*[range(d) for d in state_dims])
-            
+
             # Loop over the state grid
-            for ind_x, x_k in itertools.izip(state_ind, state_grid):
+            for ind_x, x_k in zip(state_ind, state_grid):
                 J_xk_opt, u_xk_opt = self._value_at_state_vect(x_k, J_next_interp, t_k)
                 # Save the optimal value:
                 J_k[ind_x] = J_xk_opt
                 pol_k[ind_x] = u_xk_opt
             # end for each state value
-        
+
         exec_time = (datetime.now() - t_start).total_seconds()
         if report_time: print('\rvalue iteration run in {:.2f} s'.format(exec_time))
 
         return J, pol
-    
+
     #@profile
     def _value_at_state_loop(self, x_k, J_next_interp):
         '''find the optimal cost J_k and optimal control u_k
         at a given state point `x_k`
-        
+
         This is the *iterative* implentation:
-        The set of allowed controls is discretized their expected cost 
+        The set of allowed controls is discretized their expected cost
         J(x_k, u_k) is computed one after another in a loop.
         Best control and cost is memorized within the loop.
-        
+
         Returns (J_xk_opt, u_xk_opt)
         '''
         # compute an allowed control grid (depends on the state)
@@ -607,12 +607,12 @@ class DPSolver(object):
         # Iterate over the control grid
         J_xk_opt = np.inf
         u_xk_opt = None
-        
+
         # grab the 1D perturbation vector
         w_k = self.perturb_grid[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement an nD perturbation
-        
+
         # Iterate over all possible controls:
         sys_params = self.sys.params
         for u_xk in itertools.product(*u_grids):
@@ -625,32 +625,32 @@ class DPSolver(object):
             J_k_grid += J_next_interp(*x_next) # add the cost-to-go
             # Expected (weighted mean) cost:
             J = np.inner(J_k_grid, w_proba)
-            
+
             # Check optimality of the cost:
             if J < J_xk_opt:
                 J_xk_opt = J
                 u_xk_opt = u_xk
         # end for each control
-        
+
         return (J_xk_opt, u_xk_opt)
     # end _value_at_state_loop()
-    
+
     #@profile
     def _value_at_state_vect(self, x_k, J_next_interp, t_k=None):
         '''find the optimal cost J_k and optimal control u_k
         at a given state point `x_k`
-        
+
         This is the *vectorized* implementation:
         The set of allowed controls is discretized and their expected cost
         J(x_k, u_k) is computed *all at once*.
         Then, the best control and cost is found using `np.argmin`
-        
+
         Returns (J_xk_opt, u_xk_opt)
         '''
         # Compute the allowed control grid (depends on the state)
         u_grids, control_dims = self.control_grids(x_k, t_k)
         nb_control = len(u_grids)
-        
+
         # Reshape the control grids to enable broadcasted operations:
         for i in range(nb_control):
             # create a tuple of ones of length (nb_control + 1) with -1 at index i
@@ -658,13 +658,13 @@ class DPSolver(object):
             shape = (1,)*i + (-1,) + (1,)*(nb_control-i)
             # inplace reshape:
             u_grids[i].shape = shape
-        
+
         nb_perturb = len(self.perturb_grid)
         if nb_perturb > 0:
             # grab the 1D perturbation vector
             w_proba = self.perturb_proba[0]
             # TODO : implement nD perturbation
-        
+
         args = x_k + tuple(u_grids) + tuple(self.perturb_grid)
         sys_params = self.sys.params
         if t_k is not None:
@@ -681,30 +681,30 @@ class DPSolver(object):
         elif nb_perturb == 1:
             J = np.inner(J_k_grid, w_proba) # shape dim_control
             assert J.shape == control_dims
-        
+
         # Find the lowest cost in array J:
         ind_opt = np.unravel_index(J.argmin(),control_dims)
-        
+
         J_xk_opt = J[ind_opt]
         u_xk_opt = [u_grids[i].flatten()[ind_opt[i]] for i in range(nb_control)]
         return (J_xk_opt, u_xk_opt)
     # end _value_at_state_vect()
-    
+
     def eval_policy(self, pol, n_iter, rel_dp=False, J_zero=None,
                     report_time=True,  J_ref_full=False):
         '''evaluate the policy `pol` : returns the cost of each state
         after `n_iter` steps.
         (useful for *policy iteration* algorithm)
-        
+
         If rel_dp is True, uses the relative DP algorithm instead of the
         normal summation. False by default
-        
+
         Returns
         J_pol (array of shape self._state_grid_shape)
         J_pol, J_ref if `rel_dp` is True
         '''
         t_start = datetime.now()
-        
+
         state_dims = self._state_grid_shape
         nb_state = len(self.sys.state)
         # Initial cost to start the evaluation with:
@@ -712,22 +712,22 @@ class DPSolver(object):
             J_zero = np.zeros(state_dims)
         assert J_zero.shape == state_dims
         J_pol = J_zero
-        
+
         # Reference cost :
         J_ref = np.zeros(n_iter)
         # which state to use as reference:
         ref_ind = self._state_ref_ind
-        
+
         # Policy : check the shape
         nb_control = len(self.sys.control)
         assert pol.shape == state_dims + (nb_control,)
-        
+
         # Perturbation:
         w_k = self.perturb_grid[0]
         w_proba = self.perturb_proba[0]
         # TODO : implement nD perturbation
 
-        
+
         # Reshape the state grids to enable broadcasted operations:
         state_grid = [None]*nb_state
         for i in range(nb_state):
@@ -737,7 +737,7 @@ class DPSolver(object):
             # inplace reshape:
             state_grid[i] = np.reshape(self.state_grid[i], shape)
         state_grid = tuple(state_grid)
-        
+
         # Loop over instants
         sys_params = self.sys.params
         for k in range(n_iter):
@@ -746,7 +746,7 @@ class DPSolver(object):
             J_pol_interp = self.interp_on_state(J_pol)
             # separate the controls
             u_k = [pol[..., i].reshape(state_dims+(1,))
-                   for i in range(nb_control)] 
+                   for i in range(nb_control)]
             args = state_grid + tuple(u_k) + (w_k,)
             # Compute a grid of next steps:
             x_next = self.sys.dyn(*args, **sys_params)
@@ -755,16 +755,16 @@ class DPSolver(object):
             J_k_grid = g_k_grid + J_pol_interp(*x_next) # add the cost-to-go
             # Expected (weighted mean) cost:
             J_pol = np.inner(J_k_grid, w_proba)
-            
+
             # end for each state
             if rel_dp:
                 J_ref[k] = J_pol[ref_ind]
                 J_pol -= J_ref[k]
         # end for each instant
-        
+
         exec_time = (datetime.now() - t_start).total_seconds()
         if report_time: print('\rpolicy evaluation run in {:.2f} s     '.format(exec_time))
-        
+
         if rel_dp:
             if not J_ref_full:
                 # only report the last reference cost:
@@ -773,34 +773,34 @@ class DPSolver(object):
         else:
             return J_pol
     # end eval_policy
-    
+
     def policy_iteration(self, pol_init, n_val, n_pol=1, rel_dp=False):
         '''policy iteration algorithm
-        
+
         Parameters
         pol_init : initial policy to evaluate
         n_val : number of value iterations to evaluate the policy
         n_pol : number of policy iterations (default to 1)
-        
+
         Returns
         (J_pol, pol) arrays
         and J_pol is a tuple (J_diff, J_ref) if `rel_dp` is True
         '''
         pol = pol_init
-        
+
         # First evaluation of the policy:
         J_pol = self.eval_policy(pol, n_val, rel_dp)
         if rel_dp:
             # J_pol is a tuple J_diff, J_ref
             J_diff, J_ref = J_pol
             print('ref policy cost: {:g}'.format(J_ref))
-        
+
         # Improve the policy:
         for k in range(n_pol):
             print('policy iteration {:d}/{:d}'.format(k+1, n_pol))
             # 1) Improve the policy
             _, pol = self.value_iteration(J_pol, rel_dp=rel_dp)
-            
+
             # 2) Evaluate the new policy:
             J_pol = self.eval_policy(pol, n_val, rel_dp)
             if rel_dp:
@@ -810,7 +810,7 @@ class DPSolver(object):
 
         return J_pol, pol
     # end policy_iteration
-    
+
     def print_summary(self):
         '''summary information about the state of the SDP solver
         '''
@@ -825,7 +825,7 @@ class DPSolver(object):
                 print('  - Δ{:s} = {:g}'.format(self.sys.state[i], step))
             else: # len(grid) == 1
                 print('  - {:s} fixed at {:g}'.format(self.sys.state[i], grid[0]))
-        
+
         # b) Perturbation discretization:
         if self.sys.stochastic:
             grid_size = 'x'.join([str(len(grid)) for grid in self.perturb_grid])
@@ -836,7 +836,7 @@ class DPSolver(object):
                     print('  - Δ{:s} = {:g}'.format(self.sys.perturb[i], step))
                 else: # len(grid) == 1
                     print('  - {:s} fixed at {:g}'.format(self.sys.perturb[i], grid[0]))
-        
+
         # c) Control discretization
         # Compute the average number of control points:
         control_dims_list = []
@@ -850,7 +850,7 @@ class DPSolver(object):
             cdim = np.array(control_dims_list)
         else:
             print('Warning: sys.control_box is still to be defined!')
-        
+
         print('* control discretization steps:')
         for i in range(len(self.sys.control)):
             step = self.control_steps[i]
@@ -907,24 +907,24 @@ if __name__ == '__main__':
     def admissible_P_sto(E, P_req):
         '''returns the set of admissible control U(x_k) of an Energy storage
         Control is the stored power P_sto
-        
+
         Returns the cartesian description of the admissible control space
-        (u1_min, u1_max), 
+        (u1_min, u1_max),
         '''
         P_neg = np.max(( -E/(1+a), -P_rated))
         P_pos = np.min(( (E_rated - E)/(1-a), P_rated))
         U1 = (P_neg, P_pos)
         return (U1, )
 
-    
+
     ### Cost model
     c_dev = 200 # [€/MWh]
-    
+
     def cost_lin(E, P_req, P_sto, innov):
         '''cost of one instant (linear penalty on the absolute deviation)'''
         P_dev = P_req - P_sto
         return c_dev * np.abs(P_dev)
-    
+
     def cost_quad(E, P_req, P_sto, innov):
         '''a simple quadratic cost model
         which penalizes only the commitment deviation P_dev
@@ -932,7 +932,7 @@ if __name__ == '__main__':
         P_dev = P_req - P_sto
         return P_dev**2
 
-    
+
     ### Create the system description:
     sys = SysDescription((2,1,1), name='NaS Storage')
     sys.dyn = dyn_sto
@@ -942,7 +942,7 @@ if __name__ == '__main__':
 
     sys.print_summary()
     print('')
-    
+
     ### Create the DP solver:
     dpsolv = DPSolver(sys)
     # discretize the state space
@@ -955,15 +955,15 @@ if __name__ == '__main__':
     dpsolv.discretize_perturb(-3*innov_scale, 3*innov_scale, N_w)
     # control discretization step:
     dpsolv.control_steps=(.1,) # maximum 41 pts when -2,2 MW are admissible
-    
+
     dpsolv.print_summary()
     print('')
-    
+
     print('Running 2 value iterations...')
     J_N = np.zeros((N_E,N_P_req))
     J, u = dpsolv.value_iteration(J_N)
     J, u = dpsolv.value_iteration(J)
-    
+
     # Make a quick plot of the optimal controls
     fig = plt.figure('optimal controls', figsize=(5,4.5))
     ax1 = fig.add_subplot(111, title='Stored power $P_{sto}$',
@@ -971,4 +971,3 @@ if __name__ == '__main__':
     im = ax1.imshow(u[:,:,0], interpolation='nearest')
     fig.colorbar(im)
     plt.show()
-
