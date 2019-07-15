@@ -1,7 +1,11 @@
 *~
 *.pyc
 *.pyd
+*.so
 /build
 /dist
 /stodynprog.egg-info
 .ipynb_checkpoints
+/00 Deterministic DP experiments
+/personal examples
+/profiling results

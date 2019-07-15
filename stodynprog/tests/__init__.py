@@ -1,11 +1,9 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-import test_dolointerp, test_stodynprog
-
 def run(verbose=False):
     '''run the unit tests of stodynprog (using `nose` module)
-    
+
     return True if test run succeeded, False otherwise
     '''
     import nose

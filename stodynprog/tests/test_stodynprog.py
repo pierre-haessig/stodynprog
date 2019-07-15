@@ -30,12 +30,12 @@ def test_enforce_sig_len():
         pass
     def f2(x, y):
         pass
-    
+
     # Potential signatures
     arg0 = []
     arg1 = ['x']
     arg2 = ['x','y']
-    
+
     # Functions without extra parameters
     with_params = False
     # f0 should accept 0 argument:
@@ -54,8 +54,8 @@ def test_enforce_sig_len():
     try:
         enforce_sig_len(f1, arg2, with_params)
     except ValueError as e:
-        pass
-    assert_equal(e.message, "'f1' should accept 2 args (x, y), not 1")
+        e_msg = e.args[0]
+    assert_equal(e_msg, "'f1' should accept 2 args (x, y), not 1")
 
     # functions with extra parameters:
     def f1p(x, **params):
@@ -63,23 +63,23 @@ def test_enforce_sig_len():
     assert_true(enforce_sig_len(f1p, arg1, with_params=True))
     assert_raises(ValueError, enforce_sig_len, f1p, arg1, with_params=False)
     assert_raises(ValueError, enforce_sig_len, f1, arg1, with_params=True)
-    
+
 ### test of SysDescription class ###############################################
 
 class testSysDescription:
     def setup(self):
         self.sys110 = stodynprog.SysDescription((1,1,0), stationnary=True, name='sys110')
         self.sys111 = stodynprog.SysDescription((1,1,1), stationnary=True, name='sys111')
-        
+
     def test_attributes(self):
         'SysDescription object attributes'
         assert_true(self.sys111.stationnary)
-        
+
         assert_true(self.sys111.stochastic)
         assert_true(not self.sys110.stochastic)
-        
+
         assert_equal(self.sys111.name, 'sys111')
-    
+
     def test_dyn_function(self):
         # Appropriate dynamical function:
         def dyn3(my_state, my_control, my_perturb):
@@ -90,7 +90,7 @@ class testSysDescription:
         assert_equal(self.sys111.state, ['my_state'])
         assert_equal(self.sys111.control, ['my_control'])
         assert_equal(self.sys111.perturb, ['my_perturb'])
-        
+
         # Unappropriate dynamical functions:
         def dyn2(x,u):
             pass
@@ -100,7 +100,7 @@ class testSysDescription:
             self.sys111.dyn = dyn2
         with assert_raises(ValueError):
             self.sys111.dyn = dyn4
-    
+
     def test_print_summary(self):
         # nothing to test really, expect that it runs without error:
         self.sys111.print_summary()

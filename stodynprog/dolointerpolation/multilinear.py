@@ -3,7 +3,7 @@ from __future__ import division
 import numpy
 import numpy as np
 
-from multilinear_cython import multilinear_interpolation
+from .multilinear_cython import multilinear_interpolation
 #
 # try:
 #     print("Using compiled linear interpolator")
